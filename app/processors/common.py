@@ -13,9 +13,21 @@ SYNONYMS = {
     'задача': {'обязан', 'обязанность', 'должен', 'требуется', 'необходимо', 'сделать'},
 }
 
+PAGE_MARKER_RE = re.compile(r'\[Страница\s+(\d+)\]', flags=re.IGNORECASE)
+
 
 def estimate_tokens(text: str) -> int:
     return max(1, len(text or '') // 3)
+
+
+def _page_prefix(text: str, start: int, part: str) -> str:
+    """Carry the active PDF page marker into a chunk cut mid-page."""
+    if start <= 0 or PAGE_MARKER_RE.match(part):
+        return ''
+    matches = list(PAGE_MARKER_RE.finditer(text, 0, start))
+    if not matches:
+        return ''
+    return f'[Страница {matches[-1].group(1)}]\n'
 
 
 def chunk_text(text: str, size: int = 8_000, overlap: int = 500) -> list[str]:
@@ -40,7 +52,8 @@ def chunk_text(text: str, size: int = 8_000, overlap: int = 500) -> list[str]:
                 end = cut + 1
         part = text[start:end].strip()
         if part:
-            chunks.append(part)
+            prefix = _page_prefix(text, start, part)
+            chunks.append(prefix + part)
         if end >= len(text):
             break
         start = max(end - overlap, start + 1)
