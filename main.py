@@ -19,7 +19,7 @@ from app.context import build_context
 from app.database.session import Database
 
 settings = get_settings()
-app = FastAPI(title='RAZBERI health', version=settings.version, docs_url=None, redoc_url=None)
+app = FastAPI(title='Clarify health', version=settings.version, docs_url=None, redoc_url=None)
 _runtime_db: Database | None = None
 _scheduler_running = False
 _bot_initialized = False
@@ -61,7 +61,7 @@ async def main() -> None:
     global _runtime_db, _scheduler_running, _bot_initialized
 
     configure_logging()
-    log = logging.getLogger('razberi.main')
+    log = logging.getLogger('clarify.main')
     settings.ensure_dirs()
     if not settings.bot_token:
         raise RuntimeError('BOT_TOKEN is required. Add it as an environment variable; never commit it to GitHub.')
@@ -104,11 +104,12 @@ async def main() -> None:
         tasks.append(asyncio.create_task(run_http(), name='http'))
 
     log.info(
-        'RAZBERI %s starting ai=%s endpoint=%s model=%s stt=%s',
+        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s stt=%s',
         settings.version,
         'on' if settings.ai_available else 'off',
         ctx.ai.endpoint_label,
-        settings.openai_model,
+        settings.fast,
+        settings.smart,
         settings.stt_provider,
     )
     try:
@@ -124,7 +125,7 @@ async def main() -> None:
         await db.close()
         _runtime_db = None
         _bot_initialized = False
-        log.info('RAZBERI stopped')
+        log.info('Clarify stopped')
 
 
 if __name__ == '__main__':
