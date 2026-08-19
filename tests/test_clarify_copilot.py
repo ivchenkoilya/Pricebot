@@ -8,6 +8,7 @@ from app.ai.conversation import (
     text_without_urls,
 )
 from app.ai.schemas import AnalysisResult
+from app.processors.common import chunk_text
 
 
 @dataclass
@@ -70,3 +71,10 @@ def test_compact_card_puts_direct_summary_first():
     assert 'На человеке маска лошади.' in card
     assert '<b>Коротко</b>' not in card
     assert card.index('На человеке маска лошади.') < card.index('Коричневая маска')
+
+
+def test_pdf_page_marker_survives_mid_page_chunking():
+    text = '[Страница 7]\n' + ('условия оплаты ' * 1000)
+    chunks = chunk_text(text, size=500, overlap=40)
+    assert len(chunks) > 2
+    assert all(chunk.startswith('[Страница 7]') for chunk in chunks)
