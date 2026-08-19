@@ -6,7 +6,17 @@ from pathlib import Path
 from sqlalchemy import delete, func, select
 
 from app.database.models import User
-from app.database.razberi_models import AIUsage, ErrorLog, Material, MaterialChunk, Metric, Reminder
+from app.database.razberi_models import (
+    AIUsage,
+    ErrorLog,
+    Material,
+    MaterialChunk,
+    Metric,
+    Project,
+    ProjectMaterial,
+    Reminder,
+    UserStyle,
+)
 from app.processors.common import chunk_text, retrieve_chunks
 
 
@@ -182,7 +192,7 @@ class MaterialService:
                 ).scalars()
             )
 
-    async def context(self, user_id: int, material_id: int, query: str, limit: int = 5) -> str:
+    async def context(self, user_id: int, material_id: int, query: str, limit: int | None = None) -> str:
         async with self.db.sessions() as session:
             material = (
                 await session.execute(
@@ -200,7 +210,13 @@ class MaterialService:
                     )
                 ).scalars()
             )
-        return '\n\n'.join(retrieve_chunks([item.text for item in chunks], query, limit=limit))[:32_000]
+        selected = retrieve_chunks(
+            [item.text for item in chunks],
+            query,
+            limit=limit or self.settings.retrieval_chunk_limit,
+        )
+        header = f'Название: {material.title}\nКратко: {material.summary}\n\n'
+        return (header + '\n\n'.join(selected))[:32_000]
 
     async def delete(self, user_id: int, material_id: int) -> bool:
         async with self.db.sessions() as session:
@@ -212,6 +228,7 @@ class MaterialService:
             if material is None:
                 return False
             local_path = material.local_path
+            await session.execute(delete(ProjectMaterial).where(ProjectMaterial.material_id == material.id))
             await session.execute(delete(MaterialChunk).where(MaterialChunk.material_id == material.id))
             await session.delete(material)
             await session.commit()
@@ -245,6 +262,105 @@ class MaterialService:
         return len(materials)
 
 
+class ProjectService:
+    def __init__(self, db):
+        self.db = db
+
+    async def list(self, user_id: int):
+        async with self.db.sessions() as session:
+            return list(
+                (
+                    await session.execute(
+                        select(Project).where(Project.user_id == user_id).order_by(Project.created_at.desc())
+                    )
+                ).scalars()
+            )
+
+    async def create(self, user_id: int, name: str):
+        clean = ' '.join((name or '').split())[:120] or 'Новый проект'
+        async with self.db.sessions() as session:
+            existing = (
+                await session.execute(select(Project).where(Project.user_id == user_id, Project.name == clean))
+            ).scalar_one_or_none()
+            if existing:
+                return existing
+            project = Project(user_id=user_id, name=clean)
+            session.add(project)
+            await session.commit()
+            await session.refresh(project)
+            return project
+
+    async def add_material(self, user_id: int, project_id: int, material_id: int) -> bool:
+        async with self.db.sessions() as session:
+            project = (
+                await session.execute(select(Project).where(Project.id == project_id, Project.user_id == user_id))
+            ).scalar_one_or_none()
+            material = (
+                await session.execute(select(Material).where(Material.id == material_id, Material.user_id == user_id))
+            ).scalar_one_or_none()
+            if not project or not material:
+                return False
+            existing = (
+                await session.execute(
+                    select(ProjectMaterial).where(
+                        ProjectMaterial.project_id == project_id,
+                        ProjectMaterial.material_id == material_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if not existing:
+                session.add(ProjectMaterial(project_id=project_id, material_id=material_id))
+                await session.commit()
+            return True
+
+    async def materials(self, user_id: int, project_id: int):
+        async with self.db.sessions() as session:
+            project = (
+                await session.execute(select(Project).where(Project.id == project_id, Project.user_id == user_id))
+            ).scalar_one_or_none()
+            if not project:
+                return None, []
+            rows = list(
+                (
+                    await session.execute(
+                        select(Material)
+                        .join(ProjectMaterial, ProjectMaterial.material_id == Material.id)
+                        .where(ProjectMaterial.project_id == project_id, Material.user_id == user_id)
+                        .order_by(ProjectMaterial.created_at.desc())
+                    )
+                ).scalars()
+            )
+            return project, rows
+
+
+class StyleService:
+    def __init__(self, db):
+        self.db = db
+
+    async def get(self, user_id: int) -> str:
+        async with self.db.sessions() as session:
+            row = (
+                await session.execute(select(UserStyle).where(UserStyle.user_id == user_id))
+            ).scalar_one_or_none()
+            return (row.profile or '') if row else ''
+
+    async def set(self, user_id: int, profile: str):
+        clean = ' '.join((profile or '').split())[:1000]
+        async with self.db.sessions() as session:
+            row = (
+                await session.execute(select(UserStyle).where(UserStyle.user_id == user_id))
+            ).scalar_one_or_none()
+            if row is None:
+                row = UserStyle(user_id=user_id, profile=clean, sample_count=1)
+                session.add(row)
+            else:
+                row.profile = clean
+                row.sample_count += 1
+                row.updated_at = now_utc()
+            await session.commit()
+        return clean
+
+
 class MetricService:
     def __init__(self, db):
         self.db = db
@@ -261,7 +377,6 @@ class ErrorService:
 
     async def record(self, request_id: str, user_id: int | None, feature: str, error: Exception):
         async with self.db.sessions() as session:
-            # Never save user content; only exception type and a bounded reason.
             session.add(
                 ErrorLog(
                     request_id=request_id[:64],
@@ -282,7 +397,11 @@ class PrivacyService:
     async def delete_user_data(self, user_id: int) -> None:
         await self.materials.delete_user_materials(user_id)
         async with self.db.sessions() as session:
-            # Payment/subscription records intentionally remain for accounting.
+            projects = list((await session.execute(select(Project.id).where(Project.user_id == user_id))).scalars())
+            if projects:
+                await session.execute(delete(ProjectMaterial).where(ProjectMaterial.project_id.in_(projects)))
+            await session.execute(delete(Project).where(Project.user_id == user_id))
+            await session.execute(delete(UserStyle).where(UserStyle.user_id == user_id))
             await session.execute(delete(Reminder).where(Reminder.user_id == user_id))
             await session.execute(delete(AIUsage).where(AIUsage.user_id == user_id))
             await session.execute(delete(Metric).where(Metric.user_id == user_id))
