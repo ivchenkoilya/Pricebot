@@ -44,14 +44,28 @@ async def get_or_create_product_from_url(session: AsyncSession, registry: Provid
         product.last_checked_at = snapshot.checked_at
         product.next_check_at = snapshot.checked_at + timedelta(hours=settings.check_interval_free_hours)
         product.check_interval_minutes = settings.check_interval_free_hours * 60
-        product.check_status = 'ok'
+
+        # AI page-reading may successfully identify the product while the store
+        # still withholds a reliable price. Preserve that useful identity, but do
+        # not mark the price tracker healthy until a deterministic provider has
+        # actually confirmed a current price.
+        has_price = snapshot.current_price is not None
+        product.check_status = 'ok' if has_price else 'degraded'
         product.failure_count = 0
-        product.last_error = None
+        product.last_error = None if has_price else 'Страница прочитана, но цена пока не подтверждена provider-парсером'
         await session.flush()
-        session.add(PriceHistory(product_id=product.id, price=snapshot.current_price, old_price=snapshot.old_price, availability=snapshot.availability, checked_at=snapshot.checked_at))
+        session.add(
+            PriceHistory(
+                product_id=product.id,
+                price=snapshot.current_price,
+                old_price=snapshot.old_price,
+                availability=snapshot.availability,
+                checked_at=snapshot.checked_at,
+            )
+        )
         await session.commit()
         await session.refresh(product)
-        return product, snapshot, None
+        return product, snapshot, None if has_price else product.last_error
     except Exception as exc:
         host = urlsplit(normalized).hostname or 'unknown'
         product = existing
