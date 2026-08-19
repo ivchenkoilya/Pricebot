@@ -15,13 +15,17 @@ def main_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def product_keyboard(product_id: int, url: str, watching: bool = False) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text='🎯 Условие', callback_data=f'target:{product_id}'), InlineKeyboardButton(text='📊 История', callback_data=f'history:{product_id}')],
-        [InlineKeyboardButton(text='🏆 Новый минимум', callback_data=f'newlow:{product_id}'), InlineKeyboardButton(text='📦 Наличие', callback_data=f'stock:{product_id}')],
+def product_keyboard(product_id: int, url: str, watching: bool = False, price_available: bool = True) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if price_available:
+        rows.extend([
+            [InlineKeyboardButton(text='🎯 Условие', callback_data=f'target:{product_id}'), InlineKeyboardButton(text='📊 История', callback_data=f'history:{product_id}')],
+            [InlineKeyboardButton(text='🏆 Новый минимум', callback_data=f'newlow:{product_id}'), InlineKeyboardButton(text='📦 Наличие', callback_data=f'stock:{product_id}')],
+        ])
+    rows.extend([
         [InlineKeyboardButton(text='⏸ Не следить' if watching else '🔔 Следить', callback_data=f'pause:{product_id}' if watching else f'follow:{product_id}')],
         [InlineKeyboardButton(text='🛒 Открыть', url=url)],
-    ]
+    ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
