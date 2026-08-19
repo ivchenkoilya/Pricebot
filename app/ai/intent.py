@@ -27,7 +27,13 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
     if low.startswith(('сравни ', 'сравнить ')):
         return IntentDecision('compare', deep=True)
 
-    if low.startswith(('объясни просто', 'простыми словами', 'что это значит', 'объясни по-простому')):
+    if low.startswith((
+        'объясни просто',
+        'объясни простыми словами',
+        'простыми словами',
+        'что это значит',
+        'объясни по-простому',
+    )):
         return IntentDecision(
             'plain',
             'Объясни содержание простыми словами, без канцелярита. Сохрани факты, суммы и сроки.',
