@@ -19,7 +19,8 @@
 - проверять один `Product` один раз, даже если за ним следят разные пользователи;
 - FREE/PRO лимиты из environment variables;
 - Telegram Stars subscription для PRICE PRO;
-- `/health`, `/status`, `/id`, `/paysupport`, `/cancelpro`;
+- опциональный OpenAI-слой для понимания обычных текстовых запросов о товарах;
+- `/health`, `/status`, `/id`, `/ai_status`, `/paysupport`, `/cancelpro`;
 - admin `/stats`, `/test`, `/refund`;
 - SQLite на persistent volume Amvera;
 - GitHub Actions: compile, pytest и Docker build.
@@ -39,13 +40,13 @@ app/
   database/         SQLAlchemy models/session
   payments/         Telegram Stars
   scheduler/        batch price checks
-  services/         products, alerts, stats, affiliate placeholder
-  trackers/         provider interface + GenericProvider
+  services/         products, alerts, stats, affiliate placeholder, optional AI
+  trackers/         provider interface + GenericProvider/OzonProvider
   utils/            URL/SSRF, money, rate limit
 tests/
 main.py
 Dockerfile
-amvera.yml
+amvera.yaml
 .env.example
 .github/workflows/test.yml
 ```
@@ -107,7 +108,10 @@ GET /health
 - `MIN_DROP_PERCENT=3`;
 - `ALERT_COOLDOWN_HOURS=6`;
 - fetch/user rate-limit параметры;
-- `DISABLED_PROVIDERS` — список отключённых provider через запятую.
+- `DISABLED_PROVIDERS` — список отключённых provider через запятую;
+- `AI_ENABLED=true` — включает опциональный AI-слой;
+- `OPENAI_API_KEY` — секрет OpenAI Platform, хранить только в Amvera Secrets;
+- `OPENAI_MODEL=gpt-5-mini` — модель для нормализации товарных запросов.
 
 На Amvera при пустом `DATABASE_URL` приложение использует:
 
@@ -131,7 +135,7 @@ Workflow `.github/workflows/test.yml` на push/PR выполняет:
 
 ## Amvera
 
-Проект использует Docker. Файл `amvera.yml` задаёт Docker environment, `persistenceMount: /data` и `containerPort: "8080"`.
+Проект использует Docker. Файл `amvera.yaml` задаёт Docker environment, `persistenceMount: /data` и `containerPort: 8080`.
 
 ### Развёртывание только с Android-телефона
 
@@ -140,14 +144,30 @@ Workflow `.github/workflows/test.yml` на push/PR выполняет:
 3. Выбери ветку `main`.
 4. В Variables/Secrets добавь `BOT_TOKEN`.
 5. Если нужен TEST PANEL владельца, добавь `ADMIN_TELEGRAM_ID`.
-6. Остальные значения можно сначала оставить как в `.env.example`.
-7. Запусти build/deploy.
+6. Для AI добавь секрет `OPENAI_API_KEY` и оставь `AI_ENABLED=true`.
+7. Запусти build/deploy либо дождись автоматической сборки после push из GitHub.
 8. Открой Build Logs и убедись, что контейнер стартовал без traceback.
 9. Открой Telegram и отправь боту `/status`.
-10. Пришли ссылку на реальный товар.
-11. Нажми `🔔 Следить`.
+10. Для проверки AI отправь `/ai_status`.
+11. Пришли ссылку на реальный товар и нажми `🔔 Следить`.
 
 Компьютер после deployment не нужен: polling, scheduler и HTTP health работают внутри контейнера.
+
+### Проверка OpenAI
+
+После добавления `OPENAI_API_KEY` и нового deployment:
+
+```text
+/ai_status
+```
+
+Должно вернуть `AI: ON`. Затем можно написать обычным текстом, например:
+
+```text
+айфон 16 про 256 чёрный
+```
+
+PRICE нормализует товарный запрос, но не придумывает цену. Реальную цену по-прежнему получает provider магазина.
 
 ## Первая проверка после deployment
 
@@ -211,7 +231,7 @@ PRO оформляется внутри Telegram за Stars (`XTR`). Цена з
 
 PRICE проверяет URL до запроса и после каждого redirect. Блокируются localhost, private/loopback/link-local/reserved/multicast/unspecified IPv4/IPv6 и DNS-имена, которые резолвятся во внутренний адрес. Есть user/global/per-host ограничения запросов и максимальный размер HTML-ответа.
 
-Бот не логирует `BOT_TOKEN`. Не добавляйте cookies, токены GitHub, Amvera secrets или закрытые API credentials в исходники.
+Бот не логирует `BOT_TOKEN` или `OPENAI_API_KEY`. Не добавляйте cookies, токены GitHub, Amvera secrets или закрытые API credentials в исходники.
 
 ## Если цена не определяется
 
