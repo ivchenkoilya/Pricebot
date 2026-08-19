@@ -57,8 +57,21 @@ def _terms(value: str) -> set[str]:
         'что', 'это', 'этот', 'эта', 'эти', 'как', 'где', 'когда', 'какой', 'какая',
         'какие', 'там', 'тут', 'здесь', 'него', 'нее', 'неё', 'ему', 'ней', 'или',
         'для', 'про', 'под', 'над', 'при', 'мне', 'моя', 'мой', 'твой', 'ещё', 'еще',
+        'было', 'была', 'были', 'будет', 'есть', 'тогда', 'теперь', 'сказано',
     }
     return {term.lower() for term in WORD_RE.findall(value or '') if term.lower() not in stop}
+
+
+def _stem(term: str) -> str:
+    """Tiny Russian-friendly stemmer for retrieval, not linguistic analysis."""
+    for suffix in (
+        'иями', 'ями', 'ами', 'ого', 'ему', 'ому', 'ыми', 'ими', 'ую', 'юю',
+        'ая', 'яя', 'ое', 'ее', 'ие', 'ые', 'ий', 'ый', 'ой', 'ам', 'ям', 'ах',
+        'ях', 'ом', 'ем', 'ов', 'ев', 'ы', 'и', 'а', 'я', 'у', 'ю', 'е',
+    ):
+        if term.endswith(suffix) and len(term) - len(suffix) >= 5:
+            return term[:-len(suffix)]
+    return term
 
 
 def select_context_materials(
@@ -80,15 +93,21 @@ def select_context_materials(
         return []
 
     low = ' '.join((query or '').lower().split())
+    terms = _terms(query)
+
     # Natural ordinal references are resolved against recency order.
     if any(word in low for word in ('предыдущ', 'второй', 'вторая', 'втором')) and len(recent) > 1:
         return [recent[1]]
     if any(word in low for word in ('третий', 'третья', 'третьем')) and len(recent) > 2:
         return [recent[2]]
-    if any(word in low for word in ('последн', 'этот', 'эта ', 'это ', 'там', 'тут', 'здесь')):
+
+    # Explicit demonstratives mean the newest item. Weak locatives like «там»
+    # only do that when the question has no meaningful topic words.
+    if any(word in low for word in ('последн', 'этот', 'эта ', 'это ')):
+        return [recent[0]]
+    if not terms and any(word in low for word in ('там', 'тут', 'здесь')):
         return [recent[0]]
 
-    terms = _terms(query)
     scored: list[tuple[float, int, object]] = []
     for index, item in enumerate(recent[:10]):
         haystack = ' '.join(
@@ -98,7 +117,11 @@ def select_context_materials(
                 str(getattr(item, 'extracted_text', '') or '')[:3000],
             ]
         ).lower()
-        overlap = sum(1 for term in terms if term in haystack)
+        overlap = 0
+        for term in terms:
+            stem = _stem(term)
+            if term in haystack or (len(stem) >= 5 and stem in haystack):
+                overlap += 1
         score = overlap * 3.0 + max(0.0, 2.0 - index * 0.25)
         scored.append((score, index, item))
 
