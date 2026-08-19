@@ -12,6 +12,7 @@ class AnalysisResult(BaseModel):
     dates: list[str] = Field(default_factory=list)
     amounts: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    source_text: str = ''
 
     def to_telegram(self, prefix: str = '✨ <b>Clarify</b> · материал разобран') -> str:
         esc = lambda value: html.escape(str(value))
