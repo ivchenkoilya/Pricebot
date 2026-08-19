@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     provider_user_agent: str = 'PRICE/0.1 (+Telegram price tracker; respectful fetcher)'
     disabled_providers: str = ''
 
+    ai_enabled: bool = True
+    openai_api_key: str = ''
+    openai_model: str = 'gpt-5-mini'
+    openai_timeout: float = 15.0
+    openai_max_output_tokens: int = 300
+
     @field_validator('admin_telegram_id', mode='before')
     @classmethod
     def empty_admin_to_none(cls, value):
@@ -60,6 +66,10 @@ class Settings(BaseSettings):
     @property
     def disabled_provider_set(self) -> set[str]:
         return {item.strip().lower() for item in self.disabled_providers.split(',') if item.strip()}
+
+    @property
+    def ai_available(self) -> bool:
+        return bool(self.ai_enabled and self.openai_api_key.strip())
 
 
 @lru_cache(maxsize=1)
