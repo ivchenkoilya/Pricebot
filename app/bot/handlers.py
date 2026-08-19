@@ -24,12 +24,51 @@ from app.services.users import get_or_create_user, record_metric
 from app.trackers.registry import ProviderRegistry
 from app.utils.money import format_money, parse_price
 
-URL_RE = re.compile(r'https?://[^\s<>]+', re.I)
+URL_RE = re.compile(
+    r'(?:(?:https?://|www\.)[^\s<>]+|(?<!@)\b(?:[a-z0-9-]+\.)+[a-z]{2,24}(?:/[^\s<>]*)?)',
+    re.I,
+)
+TARGET_PRICE_RE = re.compile(
+    r'\s*\d[\d\s\u00a0\u2009\u202f]*(?:[.,]\d{1,2})?\s*(?:₽|руб\.?)?\s*',
+    re.I,
+)
 _admin = is_admin
 
 
 def signed(value) -> str:
     return 'нет данных' if value is None else f'{value:+}%'.replace('+0.0%', '0%')
+
+
+def extract_url_from_text(text: str | None) -> str | None:
+    if not text:
+        return None
+    match = URL_RE.search(text)
+    if not match:
+        return None
+    value = match.group(0).rstrip(').,;:!?]}>\'"')
+    if not re.match(r'^https?://', value, re.I):
+        value = f'https://{value}'
+    return value
+
+
+def extract_message_url(message: Message) -> str | None:
+    found = extract_url_from_text(message.text or message.caption)
+    if found:
+        return found
+    entities = list(message.entities or []) + list(message.caption_entities or [])
+    for entity in entities:
+        value = getattr(entity, 'url', None)
+        if value:
+            found = extract_url_from_text(str(value))
+            if found:
+                return found
+    return None
+
+
+def strict_target_price(raw: str) -> Decimal | None:
+    if not TARGET_PRICE_RE.fullmatch(raw):
+        return None
+    return parse_price(raw)
 
 
 async def card_text(session, product: Product) -> str:
@@ -50,6 +89,42 @@ async def card_text(session, product: Product) -> str:
 def create_router(settings: Settings, db: Database, registry: ProviderRegistry, scheduler: PriceScheduler) -> Router:
     router = Router(name='price')
     register_admin_handlers(router, settings, db, registry, scheduler, URL_RE)
+
+    async def process_product_link(message: Message, url: str):
+        try:
+            async with db.session_factory() as session:
+                user = await get_or_create_user(session, message.from_user, settings)
+                await record_metric(session, user.id, 'product_link_sent')
+                product, snapshot, error = await get_or_create_product_from_url(session, registry, settings, url)
+                text = await card_text(session, product)
+        except ValueError:
+            return await message.answer('⚠️ Не похоже на корректную ссылку на товар.')
+
+        if snapshot:
+            return await message.answer(
+                text + f'\n\nИсточник: {product.source}',
+                reply_markup=product_keyboard(
+                    product.id,
+                    product.canonical_url,
+                    price_available=product.current_price is not None,
+                ),
+            )
+
+        if 'ozon' in (product.source or '').lower() or 'ozon' in url.lower():
+            detail = 'Ozon пока не отдал PRICE достоверную цену этой страницы.'
+        else:
+            detail = 'Магазин пока не отдал PRICE достоверную цену этой страницы.'
+        if error and 'ограничил' in error.lower():
+            detail += ' Источник ограничил автоматическую проверку.'
+        await message.answer(
+            f'⚠️ <b>Не смог проверить цену прямо сейчас</b>\n\n{detail}\n'
+            'Ссылку сохранил и попробую снова автоматически. Цена не выдумывается.',
+            reply_markup=product_keyboard(
+                product.id,
+                product.canonical_url,
+                price_available=False,
+            ),
+        )
 
     @router.message(CommandStart())
     async def start(message: Message):
@@ -191,7 +266,15 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
                 return await callback.answer('Товар не найден', show_alert=True)
             watch = (await session.execute(select(Watch).where(Watch.user_id == user.id, Watch.product_id == pid, Watch.active.is_(True)))).scalar_one_or_none()
             text = await card_text(session, product)
-        await callback.message.answer(text, reply_markup=product_keyboard(pid, product.canonical_url, bool(watch)))
+        await callback.message.answer(
+            text,
+            reply_markup=product_keyboard(
+                pid,
+                product.canonical_url,
+                bool(watch),
+                price_available=product.current_price is not None,
+            ),
+        )
         await callback.answer()
 
     @router.callback_query(F.data.startswith('follow:'))
@@ -231,6 +314,8 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
             product = await session.get(Product, pid)
             if not product:
                 return await callback.answer('Товар не найден', show_alert=True)
+            if product.current_price is None:
+                return await callback.answer('Сначала нужно получить реальную цену товара.', show_alert=True)
             try:
                 await create_or_activate_watch(session, user, product, settings)
             except WatchLimitError as exc:
@@ -242,8 +327,19 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
 
     @router.message(TargetPriceState.waiting_price)
     async def target_value(message: Message, state: FSMContext):
+        incoming_url = extract_message_url(message)
+        if incoming_url:
+            # A new link always wins over an unfinished target-price dialog. This
+            # prevents digits inside short links (e.g. /t/RhE8Ybw) becoming a price.
+            await state.clear()
+            return await process_product_link(message, incoming_url)
+
         raw = (message.text or '').strip()
-        pid = int((await state.get_data())['product_id'])
+        data = await state.get_data()
+        if 'product_id' not in data:
+            await state.clear()
+            return await message.answer('Настройка условия сброшена. Выбери товар заново.')
+        pid = int(data['product_id'])
         async with db.session_factory() as session:
             user = await get_or_create_user(session, message.from_user, settings)
             watch = (await session.execute(select(Watch).where(Watch.user_id == user.id, Watch.product_id == pid, Watch.active.is_(True)))).scalar_one_or_none()
@@ -253,7 +349,7 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
                 return await message.answer('Товар больше не отслеживается.')
             if raw.endswith('%'):
                 try:
-                    pct = Decimal(raw[:-1].replace(',', '.'))
+                    pct = Decimal(raw[:-1].strip().replace(',', '.'))
                 except InvalidOperation:
                     pct = Decimal('-1')
                 if pct <= 0 or pct > 90:
@@ -261,11 +357,13 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
                 watch.target_percent = pct
                 if not user_is_pro(user):
                     watch.target_price = None
-                await session.commit(); await state.clear()
+                await session.commit()
+                await state.clear()
                 return await message.answer(f'🎯 Напишу при снижении минимум на {pct}%.')
-            target = parse_price(raw)
+
+            target = strict_target_price(raw)
             if target is None:
-                return await message.answer('Напиши <code>30000</code> или <code>10%</code>.')
+                return await message.answer('Напиши только цену, например <code>30000</code>, <code>29 990 ₽</code> или <code>10%</code>.')
             watch.target_price = target
             if not user_is_pro(user):
                 watch.target_percent = None
@@ -275,7 +373,8 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
 
     @router.callback_query(F.data.startswith('newlow:') | F.data.startswith('stock:'))
     async def pro_toggles(callback: CallbackQuery):
-        kind, raw = callback.data.split(':', 1); pid = int(raw)
+        kind, raw = callback.data.split(':', 1)
+        pid = int(raw)
         async with db.session_factory() as session:
             user = await get_or_create_user(session, callback.from_user, settings)
             if not user_is_pro(user):
@@ -284,9 +383,11 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
             if not watch:
                 return await callback.answer('Сначала включи 🔔 Следить.', show_alert=True)
             if kind == 'newlow':
-                watch.notify_new_low = not watch.notify_new_low; enabled = watch.notify_new_low
+                watch.notify_new_low = not watch.notify_new_low
+                enabled = watch.notify_new_low
             else:
-                watch.notify_in_stock = not watch.notify_in_stock; enabled = watch.notify_in_stock
+                watch.notify_in_stock = not watch.notify_in_stock
+                enabled = watch.notify_in_stock
             await session.commit()
         await callback.answer(f'{"ON" if enabled else "OFF"}', show_alert=True)
 
@@ -301,25 +402,15 @@ def create_router(settings: Settings, db: Database, registry: ProviderRegistry, 
             points = (await session.execute(select(PriceHistory).where(PriceHistory.product_id == pid, PriceHistory.is_test.is_(False)).order_by(PriceHistory.checked_at.desc()).limit(10))).scalars().all()
         lines = [f'📊 <b>{product.name}</b>', '', f'Сейчас: {format_money(stats["current"], product.currency)}', f'Минимум: {format_money(stats["min"], product.currency)}', f'Максимум: {format_money(stats["max"], product.currency)}', f'7 дней: {signed(stats["change_7d"])}', f'30 дней: {signed(stats["change_30d"])}', f'Наблюдаем: {stats["days"]} дн.', '']
         lines += [f'{p.checked_at:%d.%m %H:%M} — {format_money(p.price, product.currency)}' for p in points]
-        await callback.message.answer('\n'.join(lines)); await callback.answer()
+        await callback.message.answer('\n'.join(lines))
+        await callback.answer()
 
-    @router.message(F.text.regexp(URL_RE))
-    async def add_url(message: Message):
-        match = URL_RE.search(message.text or '')
-        if not match:
-            return
-        async with db.session_factory() as session:
-            user = await get_or_create_user(session, message.from_user, settings)
-            await record_metric(session, user.id, 'product_link_sent')
-            product, snapshot, _error = await get_or_create_product_from_url(session, registry, settings, match.group(0).rstrip(').,]'))
-            text = await card_text(session, product)
-        if snapshot:
-            await message.answer(text + f'\n\nИсточник: {product.source}', reply_markup=product_keyboard(product.id, product.canonical_url))
-        else:
-            await message.answer('⚠️ <b>Не смог проверить цену прямо сейчас</b>\n\nТовар сохранён. Я не буду придумывать цену — попробую снова автоматически.', reply_markup=product_keyboard(product.id, product.canonical_url))
-
-    @router.message(F.text)
-    async def fallback(message: Message):
-        await message.answer('Пришли ссылку на товар — это самый надёжный способ для PRICE 0.1.0.')
+    @router.message(F.text | F.caption)
+    async def add_url_or_fallback(message: Message):
+        url = extract_message_url(message)
+        if url:
+            return await process_product_link(message, url)
+        if message.text:
+            await message.answer('Пришли ссылку на товар — можно даже без https://, например <code>ozon.ru/t/...</code>.')
 
     return router

@@ -3,12 +3,16 @@ from __future__ import annotations
 from app.config.settings import Settings
 from app.trackers.base import PriceProvider, ProductSnapshot, ProviderError
 from app.trackers.generic import GenericProvider
+from app.trackers.providers.ozon import OzonProvider
 
 
 class ProviderRegistry:
     def __init__(self, settings: Settings, providers: list[PriceProvider] | None = None):
         self.settings = settings
-        self.providers = providers or [GenericProvider(settings)]
+        self.providers = providers or [
+            OzonProvider(settings),
+            GenericProvider(settings),
+        ]
 
     async def fetch(self, url: str) -> ProductSnapshot:
         errors: list[str] = []
