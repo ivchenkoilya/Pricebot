@@ -30,6 +30,11 @@ CONTEXT_REFERENCES = (
     'в фото', 'в документе', 'в файле', 'в сообщении', 'в голосовом', 'в тексте',
 )
 
+STANDALONE_HOWTO_PREFIXES = (
+    'как сделать ', 'как создать ', 'как настроить ', 'как подключить ', 'как установить ',
+    'как написать ', 'как разработать ', 'как собрать ', 'как запустить ', 'как купить ', 'как найти ',
+)
+
 INTERROGATIVE_WORDS = re.compile(
     r'\b(кто|что|где|когда|сколько|какой|какая|какие|какого|какую|каком|каких|'
     r'почему|зачем|как|куда|откуда|чем|чей|чья|чьи)\b',
@@ -37,19 +42,32 @@ INTERROGATIVE_WORDS = re.compile(
 )
 
 
+def _has_context_reference(low: str) -> bool:
+    padded = f' {low} '
+    return any(ref in padded for ref in CONTEXT_REFERENCES)
+
+
 def _looks_like_context_question(value: str, low: str, has_recent_material: bool) -> bool:
     if not has_recent_material:
         return False
+
+    has_reference = _has_context_reference(low)
+
+    # A fresh how-to request should not get attached to an unrelated photo/file
+    # just because there happens to be a recent material in memory.
+    # «как сделать это короче» still remains contextual because it has «это».
+    if low.startswith(STANDALONE_HOWTO_PREFIXES) and not has_reference:
+        return False
+
     if '?' in value or low.startswith(QUESTION_STARTS):
         return True
 
     # Natural Telegram follow-ups often omit a question mark:
     # «В какой маске этот человек», «Цвет у него какой», «А это где снято».
     # Require both an interrogative and a reference to the previous material so a
-    # completely new request like «как сделать сайт» is not hijacked by context.
-    if len(value) <= 220 and INTERROGATIVE_WORDS.search(low):
-        if any(ref in f' {low} ' for ref in CONTEXT_REFERENCES):
-            return True
+    # completely new request is not hijacked by context.
+    if len(value) <= 220 and INTERROGATIVE_WORDS.search(low) and has_reference:
+        return True
 
     return False
 
@@ -109,7 +127,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if any(x in low for x in ('задач', 'что делать', 'действи', 'сделать')):
+    if any(x in low for x in ('задач', 'что делать', 'действи')):
         return IntentDecision(
             'tasks',
             'Перечисли конкретные задачи и следующие действия. Если их нет — так и скажи.',
