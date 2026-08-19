@@ -20,6 +20,38 @@ def test_risk_intent_uses_smart_mode():
     assert decision.deep is True
 
 
+def test_photo_followup_without_question_mark_uses_recent_material():
+    decision = classify_text_intent('В какой маске этот человек', has_recent_material=True)
+    assert decision.name == 'question'
+    assert decision.uses_recent_material is True
+
+
+def test_natural_visual_followups_use_context():
+    examples = [
+        'на каком фоне это снято',
+        'какого цвета у него одежда',
+        'что у него в руках',
+        'где этот человек находится',
+        'в каком месте они стоят',
+    ]
+    for text in examples:
+        decision = classify_text_intent(text, has_recent_material=True)
+        assert decision.name == 'question', text
+        assert decision.uses_recent_material is True, text
+
+
+def test_new_unrelated_request_is_not_hijacked_by_recent_context():
+    decision = classify_text_intent('как сделать сайт для магазина', has_recent_material=True)
+    assert decision.name == 'new_material'
+    assert decision.uses_recent_material is False
+
+
+def test_same_question_without_recent_material_is_new_material():
+    decision = classify_text_intent('В какой маске этот человек', has_recent_material=False)
+    assert decision.name == 'new_material'
+    assert decision.uses_recent_material is False
+
+
 def test_retrieval_understands_payment_synonyms():
     chunks = [
         'Общие положения договора и реквизиты сторон.',

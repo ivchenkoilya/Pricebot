@@ -6,4 +6,4 @@ import main
 @pytest.mark.asyncio
 async def test_health_payload():
     payload = await main.health()
-    assert payload == {'status': 'ok', 'app': 'Clarify', 'version': '0.3.0'}
+    assert payload == {'status': 'ok', 'app': 'Clarify', 'version': '0.4.0'}

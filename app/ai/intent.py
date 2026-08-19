@@ -15,8 +15,61 @@ class IntentDecision:
 
 QUESTION_STARTS = (
     'а ', 'что ', 'кто ', 'где ', 'когда ', 'сколько ', 'какой ', 'какая ', 'какие ',
-    'почему ', 'зачем ', 'как ', 'есть ли ', 'можно ли ', 'нужно ли ', 'должен ли ',
+    'какого ', 'какую ', 'каком ', 'каких ', 'почему ', 'зачем ', 'как ', 'куда ', 'откуда ',
+    'чем ', 'чей ', 'чья ', 'чьи ', 'есть ли ', 'можно ли ', 'нужно ли ', 'должен ли ',
+    'в какой ', 'в каком ', 'в каких ', 'на какой ', 'на каком ', 'на каких ',
+    'у кого ', 'у чего ', 'из чего ', 'с чем ', 'с кем ', 'про что ', 'о чём ', 'о чем ',
+    'что за ', 'кто там ', 'что там ',
 )
+
+CONTEXT_REFERENCES = (
+    'этот ', 'эта ', 'это ', 'эти ', 'этого ', 'этой ', 'этом ', 'эту ',
+    'тот ', 'та ', 'то ', 'те ', 'него ', 'неё ', 'нее ', 'нему ', 'ней ',
+    'он ', 'она ', 'они ', 'там ', 'тут ', 'здесь ',
+    'на фото', 'на фотке', 'на фотографии', 'на картинке', 'на изображении', 'на скрине', 'на скриншоте',
+    'в фото', 'в документе', 'в файле', 'в сообщении', 'в голосовом', 'в тексте',
+)
+
+STANDALONE_HOWTO_PREFIXES = (
+    'как сделать ', 'как создать ', 'как настроить ', 'как подключить ', 'как установить ',
+    'как написать ', 'как разработать ', 'как собрать ', 'как запустить ', 'как купить ', 'как найти ',
+)
+
+INTERROGATIVE_WORDS = re.compile(
+    r'\b(кто|что|где|когда|сколько|какой|какая|какие|какого|какую|каком|каких|'
+    r'почему|зачем|как|куда|откуда|чем|чей|чья|чьи)\b',
+    flags=re.IGNORECASE,
+)
+
+
+def _has_context_reference(low: str) -> bool:
+    padded = f' {low} '
+    return any(ref in padded for ref in CONTEXT_REFERENCES)
+
+
+def _looks_like_context_question(value: str, low: str, has_recent_material: bool) -> bool:
+    if not has_recent_material:
+        return False
+
+    has_reference = _has_context_reference(low)
+
+    # A fresh how-to request should not get attached to an unrelated photo/file
+    # just because there happens to be a recent material in memory.
+    # «как сделать это короче» still remains contextual because it has «это».
+    if low.startswith(STANDALONE_HOWTO_PREFIXES) and not has_reference:
+        return False
+
+    if '?' in value or low.startswith(QUESTION_STARTS):
+        return True
+
+    # Natural Telegram follow-ups often omit a question mark:
+    # «В какой маске этот человек», «Цвет у него какой», «А это где снято».
+    # Require both an interrogative and a reference to the previous material so a
+    # completely new request is not hijacked by context.
+    if len(value) <= 220 and INTERROGATIVE_WORDS.search(low) and has_reference:
+        return True
+
+    return False
 
 
 def classify_text_intent(text: str, has_recent_material: bool = False) -> IntentDecision:
@@ -74,7 +127,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if any(x in low for x in ('задач', 'что делать', 'действи', 'сделать')):
+    if any(x in low for x in ('задач', 'что делать', 'действи')):
         return IntentDecision(
             'tasks',
             'Перечисли конкретные задачи и следующие действия. Если их нет — так и скажи.',
@@ -98,12 +151,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    looks_like_question = (
-        '?' in value
-        or low.startswith(QUESTION_STARTS)
-        or (len(value) <= 140 and any(x in low for x in ('там ', 'это ', 'ему ', 'ей ', 'здесь ')))
-    )
-    if has_recent_material and looks_like_question:
+    if _looks_like_context_question(value, low, has_recent_material):
         return IntentDecision('question', value, value, True)
 
     return IntentDecision('new_material')
