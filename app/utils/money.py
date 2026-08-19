@@ -14,11 +14,15 @@ def parse_price(value: object) -> Decimal | None:
             return Decimal(str(value)).quantize(Decimal('0.01'))
         except InvalidOperation:
             return None
+
     text = str(value).replace('\xa0', ' ').strip()
-    cleaned = re.sub(r'[^0-9,\.\s]', '', text).strip()
-    if not cleaned:
+    # Extract only the numeric token. This deliberately excludes punctuation
+    # from currency abbreviations such as the trailing dot in "руб.".
+    match = re.search(r'\d(?:[\d\s.,]*\d)?', text)
+    if not match:
         return None
-    cleaned = cleaned.replace(' ', '')
+    cleaned = match.group(0).replace(' ', '')
+
     if ',' in cleaned and '.' in cleaned:
         if cleaned.rfind(',') > cleaned.rfind('.'):
             cleaned = cleaned.replace('.', '').replace(',', '.')
@@ -29,6 +33,7 @@ def parse_price(value: object) -> Decimal | None:
         cleaned = cleaned.replace(',', '.') if len(tail) <= 2 else cleaned.replace(',', '')
     elif cleaned.count('.') > 1:
         cleaned = cleaned.replace('.', '')
+
     try:
         amount = Decimal(cleaned).quantize(Decimal('0.01'))
     except InvalidOperation:
