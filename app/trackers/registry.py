@@ -4,6 +4,7 @@ from app.config.settings import Settings
 from app.trackers.base import PriceProvider, ProductSnapshot, ProviderError
 from app.trackers.generic import GenericProvider
 from app.trackers.providers.ozon import OzonProvider
+from app.trackers.providers.page_ai import AIPageProvider
 
 
 class ProviderRegistry:
@@ -12,6 +13,10 @@ class ProviderRegistry:
         self.providers = providers or [
             OzonProvider(settings),
             GenericProvider(settings),
+            # Last resort: read the public page and let AI identify the product.
+            # It never invents/sets current_price; monitoring prices remains
+            # deterministic through the store/generic providers above.
+            AIPageProvider(settings),
         ]
 
     async def fetch(self, url: str) -> ProductSnapshot:

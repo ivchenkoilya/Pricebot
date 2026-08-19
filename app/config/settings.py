@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     openai_timeout: float = 15.0
     openai_max_output_tokens: int = 300
 
+    # Public-page reading. Direct HTTP is attempted first; Jina Reader is only
+    # a browser-rendered fallback and does not bypass login/CAPTCHA/access rules.
+    page_reader_jina_enabled: bool = True
+    jina_reader_api_key: str = ''
+    page_reader_timeout: float = 25.0
+    page_reader_min_chars: int = 120
+    page_reader_max_chars: int = 24_000
+
     @field_validator('admin_telegram_id', mode='before')
     @classmethod
     def empty_admin_to_none(cls, value):
