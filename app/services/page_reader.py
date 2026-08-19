@@ -92,8 +92,6 @@ class PageReader:
             ('name', 'twitter:description'),
         )
 
-        # Keep structured product data because modern shops often hide useful
-        # product identity there while rendering the visual card with JS.
         structured: list[str] = []
         for script in soup.find_all('script', attrs={'type': re.compile(r'ld\+json', re.I)})[:8]:
             raw = script.string or script.get_text(' ', strip=True)
@@ -126,9 +124,6 @@ class PageReader:
         )
 
     async def _read_jina(self, target_url: str) -> PageReadResult:
-        # The public Reader API uses https://r.jina.ai/<target-url>. It renders
-        # public pages in a browser but does not bypass logins/CAPTCHA/access
-        # controls. We still validate target_url ourselves before sending it.
         endpoint = f'https://r.jina.ai/{target_url}'
         headers = {
             'Accept': 'text/plain',
@@ -148,16 +143,30 @@ class PageReader:
             raise PageReadError(f'Reader вернул HTTP {response.status_code}')
 
         text = response.text.strip()
-        title = None
-        for line in text.splitlines()[:20]:
-            clean = self._clean(line.lstrip('#').strip())
-            if clean and not clean.lower().startswith(('url source:', 'published time:', 'markdown content:')):
-                title = clean
-                break
+        title: str | None = None
+        final_url = target_url
+        for line in text.splitlines()[:30]:
+            clean = self._clean(line.strip())
+            lower = clean.lower()
+            if lower.startswith('title:'):
+                candidate = self._clean(clean.split(':', 1)[1])
+                if candidate:
+                    title = candidate
+            elif lower.startswith('url source:'):
+                candidate = clean.split(':', 1)[1].strip()
+                if candidate.startswith(('http://', 'https://')):
+                    try:
+                        final_url = await ensure_safe_url(candidate)
+                    except Exception:
+                        final_url = target_url
+            elif title is None:
+                candidate = self._clean(clean.lstrip('#').strip())
+                if candidate and not lower.startswith(('published time:', 'markdown content:')):
+                    title = candidate
 
         return PageReadResult(
             requested_url=target_url,
-            final_url=target_url,
+            final_url=final_url,
             title=title,
             description=None,
             text=self._limit(text),
