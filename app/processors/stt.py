@@ -33,6 +33,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
                     device='cpu',
                     compute_type=self.settings.whisper_compute_type,
                     download_root=self.settings.resolved_whisper_cache_dir,
+                    cpu_threads=0,
                 )
                 self.__class__._models[key] = model
         return self.__class__._models[key]
@@ -46,6 +47,9 @@ class LocalWhisperProvider(SpeechToTextProvider):
                 language=language,
                 vad_filter=True,
                 beam_size=1,
+                best_of=1,
+                condition_on_previous_text=False,
+                without_timestamps=True,
             )
             return ' '.join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
 
@@ -60,13 +64,17 @@ class OpenAICompatibleSTTProvider(SpeechToTextProvider):
     async def transcribe(self, path: str, language: str = 'ru') -> str:
         if self.client is None:
             raise RuntimeError('AI client не настроен')
-        with open(path, 'rb') as file:
-            response = await self.client.audio.transcriptions.create(
-                model=self.settings.whisper_model,
-                file=file,
-                language=language,
-            )
-        return (response.text or '').strip()
+
+        async def request() -> str:
+            with open(path, 'rb') as file:
+                response = await self.client.audio.transcriptions.create(
+                    model=self.settings.stt_remote_model,
+                    file=file,
+                    language=language,
+                )
+            return (response.text or '').strip()
+
+        return await asyncio.wait_for(request(), timeout=self.settings.stt_remote_timeout)
 
 
 def build_stt(settings: Settings, ai_provider=None) -> SpeechToTextProvider:
