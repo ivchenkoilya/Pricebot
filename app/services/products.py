@@ -32,27 +32,32 @@ async def get_or_create_product_from_url(session: AsyncSession, registry: Provid
             product = existing or Product(canonical_url=canonical, source=snapshot.source, name=snapshot.product_name)
             if existing is None:
                 session.add(product)
+
         product.canonical_url = canonical
         product.source = snapshot.source
         product.name = snapshot.product_name
-        product.image_url = snapshot.image_url
-        product.currency = snapshot.currency
-        product.seller = snapshot.seller
-        product.old_price = snapshot.old_price
-        product.current_price = snapshot.current_price
-        product.availability = snapshot.availability
+        if snapshot.image_url:
+            product.image_url = snapshot.image_url
+        if snapshot.seller:
+            product.seller = snapshot.seller
+        if snapshot.availability != 'unknown':
+            product.availability = snapshot.availability
+
+        # A page-reading AI fallback may identify the product without a reliable
+        # price. Never erase a previously confirmed price/currency in that case.
+        price_confirmed_now = snapshot.current_price is not None
+        if price_confirmed_now:
+            product.current_price = snapshot.current_price
+            product.old_price = snapshot.old_price
+            product.currency = snapshot.currency
+
         product.last_checked_at = snapshot.checked_at
         product.next_check_at = snapshot.checked_at + timedelta(hours=settings.check_interval_free_hours)
         product.check_interval_minutes = settings.check_interval_free_hours * 60
-
-        # AI page-reading may successfully identify the product while the store
-        # still withholds a reliable price. Preserve that useful identity, but do
-        # not mark the price tracker healthy until a deterministic provider has
-        # actually confirmed a current price.
-        has_price = snapshot.current_price is not None
-        product.check_status = 'ok' if has_price else 'degraded'
+        product.check_status = 'ok' if price_confirmed_now else 'degraded'
         product.failure_count = 0
-        product.last_error = None if has_price else 'Страница прочитана, но цена пока не подтверждена provider-парсером'
+        product.last_error = None if price_confirmed_now else 'Страница прочитана, но цена пока не подтверждена provider-парсером'
+
         await session.flush()
         session.add(
             PriceHistory(
@@ -65,7 +70,7 @@ async def get_or_create_product_from_url(session: AsyncSession, registry: Provid
         )
         await session.commit()
         await session.refresh(product)
-        return product, snapshot, None if has_price else product.last_error
+        return product, snapshot, None if price_confirmed_now else product.last_error
     except Exception as exc:
         host = urlsplit(normalized).hostname or 'unknown'
         product = existing
