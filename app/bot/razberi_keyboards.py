@@ -81,7 +81,7 @@ def project_picker(material_id: int, projects) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=f'📁 {project.name[:42]}', callback_data=f'projadd:{material_id}:{project.id}')]
         for project in projects[:15]
     ]
-    rows.append([InlineKeyboardButton(text='➕ Создать проект', callback_data='proj:new')])
+    rows.append([InlineKeyboardButton(text='➕ Создать проект', callback_data=f'projnew:{material_id}')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
