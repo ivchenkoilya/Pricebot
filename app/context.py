@@ -7,7 +7,16 @@ from app.ai.provider import OpenAICompatibleProvider
 from app.config.settings import Settings
 from app.database.session import Database
 from app.processors.stt import build_stt
-from app.services.core import ErrorService, MaterialService, MetricService, PrivacyService, UsageService, UserService
+from app.services.core import (
+    ErrorService,
+    MaterialService,
+    MetricService,
+    PrivacyService,
+    ProjectService,
+    StyleService,
+    UsageService,
+    UserService,
+)
 from app.services.reminders import ReminderService
 from app.services.subscriptions import SubscriptionService
 
@@ -21,6 +30,8 @@ class AppContext:
     users: UserService
     usage: UsageService
     materials: MaterialService
+    projects: ProjectService
+    styles: StyleService
     metrics: MetricService
     errors: ErrorService
     privacy: PrivacyService
@@ -43,6 +54,8 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         users=UserService(db, settings),
         usage=UsageService(db, settings),
         materials=materials,
+        projects=ProjectService(db),
+        styles=StyleService(db),
         metrics=MetricService(db),
         errors=ErrorService(db),
         privacy=PrivacyService(db, materials),

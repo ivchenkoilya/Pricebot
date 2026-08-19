@@ -6,36 +6,57 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text='📎 Разобрать'), KeyboardButton(text='🎤 Голосовые')],
-            [KeyboardButton(text='📄 Документы'), KeyboardButton(text='✍️ Написать')],
-            [KeyboardButton(text='🧠 Мои материалы'), KeyboardButton(text='👑 PRO')],
+            [KeyboardButton(text='📎 Разобрать'), KeyboardButton(text='✍️ Написать')],
+            [KeyboardButton(text='🧠 Мои материалы'), KeyboardButton(text='🔀 Сравнить')],
+            [KeyboardButton(text='📁 Проекты'), KeyboardButton(text='👑 PRO')],
             [KeyboardButton(text='⚙️ Настройки'), KeyboardButton(text='❓ Помощь')],
         ],
         resize_keyboard=True,
     )
 
 
-def actions(material_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(text='✨ Кратко', callback_data=f'mat:{material_id}:summary'),
+            InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'),
+        ]
+    ]
+    type_low = (material_type or '').lower()
+    if type_low in {'pdf', 'docx', 'txt', 'md', 'xlsx', 'csv', 'document'}:
+        rows += [
             [
-                InlineKeyboardButton(text='✨ Кратко', callback_data=f'mat:{material_id}:summary'),
-                InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'),
+                InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'),
+                InlineKeyboardButton(text='💰 Деньги', callback_data=f'mat:{material_id}:money'),
             ],
             [
-                InlineKeyboardButton(text='✅ Задачи', callback_data=f'mat:{material_id}:tasks'),
-                InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply'),
-            ],
-            [
-                InlineKeyboardButton(text='⏰ Напомнить', callback_data=f'mat:{material_id}:remind'),
-                InlineKeyboardButton(text='❓ Спросить', callback_data=f'mat:{material_id}:ask'),
-            ],
-            [
-                InlineKeyboardButton(text='📄 Исходник', callback_data=f'mat:{material_id}:source'),
-                InlineKeyboardButton(text='🗑 Удалить', callback_data=f'mat:{material_id}:delete'),
+                InlineKeyboardButton(text='📅 Сроки', callback_data=f'mat:{material_id}:dates'),
+                InlineKeyboardButton(text='👶 Просто', callback_data=f'mat:{material_id}:plain'),
             ],
         ]
-    )
+    elif type_low in {'voice', 'audio', 'forwarded'}:
+        rows += [[
+            InlineKeyboardButton(text='🎯 Что от меня хотят?', callback_data=f'mat:{material_id}:wants'),
+            InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply'),
+        ]]
+    else:
+        rows += [[
+            InlineKeyboardButton(text='✅ Задачи', callback_data=f'mat:{material_id}:tasks'),
+            InlineKeyboardButton(text='👶 Просто', callback_data=f'mat:{material_id}:plain'),
+        ]]
+
+    rows += [
+        [
+            InlineKeyboardButton(text='❓ Спросить', callback_data=f'mat:{material_id}:ask'),
+            InlineKeyboardButton(text='⏰ Напомнить', callback_data=f'mat:{material_id}:remind'),
+        ],
+        [
+            InlineKeyboardButton(text='📁 В проект', callback_data=f'mat:{material_id}:project'),
+            InlineKeyboardButton(text='📄 Исходник', callback_data=f'mat:{material_id}:source'),
+        ],
+        [InlineKeyboardButton(text='🗑 Удалить', callback_data=f'mat:{material_id}:delete')],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def materials_list(items) -> InlineKeyboardMarkup:
@@ -43,6 +64,24 @@ def materials_list(items) -> InlineKeyboardMarkup:
     for material in items[:10]:
         title = (material.title or 'Материал').replace('\n', ' ')[:42]
         rows.append([InlineKeyboardButton(text=f'#{material.id} · {title}', callback_data=f'matopen:{material.id}')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def projects_list(items) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=f'📁 {item.name[:45]}', callback_data=f'projopen:{item.id}')]
+        for item in items[:20]
+    ]
+    rows.append([InlineKeyboardButton(text='➕ Новый проект', callback_data='proj:new')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def project_picker(material_id: int, projects) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=f'📁 {project.name[:42]}', callback_data=f'projadd:{material_id}:{project.id}')]
+        for project in projects[:15]
+    ]
+    rows.append([InlineKeyboardButton(text='➕ Создать проект', callback_data=f'projnew:{material_id}')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -67,6 +106,10 @@ def forwarded_actions(material_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text='🎯 Что хотят?', callback_data=f'mat:{material_id}:wants'),
+                InlineKeyboardButton(text='👶 Объяснить', callback_data=f'mat:{material_id}:plain'),
+            ],
+            [
                 InlineKeyboardButton(text='1️⃣ Нейтрально', callback_data=f'fwd:{material_id}:neutral'),
                 InlineKeyboardButton(text='2️⃣ Дружелюбно', callback_data=f'fwd:{material_id}:friendly'),
             ],
@@ -76,7 +119,7 @@ def forwarded_actions(material_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text='❓ Спросить', callback_data=f'mat:{material_id}:ask'),
-                InlineKeyboardButton(text='🗑 Удалить', callback_data=f'mat:{material_id}:delete'),
+                InlineKeyboardButton(text='📁 В проект', callback_data=f'mat:{material_id}:project'),
             ],
         ]
     )

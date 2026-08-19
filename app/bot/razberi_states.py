@@ -11,3 +11,15 @@ class MaterialReminder(StatesGroup):
 
 class WriteForMe(StatesGroup):
     waiting = State()
+
+
+class CompareMaterials(StatesGroup):
+    waiting_ids = State()
+
+
+class ProjectCreate(StatesGroup):
+    waiting_name = State()
+
+
+class StyleSetup(StatesGroup):
+    waiting_profile = State()

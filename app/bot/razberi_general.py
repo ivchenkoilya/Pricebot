@@ -8,16 +8,17 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from app.ai.intent import classify_text_intent
 from app.bot.razberi_helpers import ensure_quota, esc, get_user
 from app.bot.razberi_keyboards import actions, delete_data_confirm, draft_actions, main_menu, pro_button, reminder_confirm
-from app.bot.razberi_states import WriteForMe
+from app.bot.razberi_states import StyleSetup, WriteForMe
 from app.processors.text import TextProcessor
 from app.services.core import is_active_pro
 from app.services.reminders import parse_reminder
 
 
 def build_general_router(ctx) -> Router:
-    router = Router(name='razberi-general')
+    router = Router(name='clarify-general')
     settings = ctx.settings
 
     @router.message(CommandStart())
@@ -25,10 +26,14 @@ def build_general_router(ctx) -> Router:
         user = await get_user(ctx, message.from_user)
         await ctx.metrics.inc('starts', user.id)
         await message.answer(
-            '👋 <b>Я РАЗБЕРИ</b>\n\n'
-            'Просто отправь мне что-нибудь:\n'
-            '🎤 голосовое\n📄 документ\n📸 скриншот\n📝 текст\n💬 сообщение\n\n'
-            'Я сам пойму, что с этим можно сделать.\n\nПопробуй прямо сейчас ↓',
+            '✨ <b>Clarify</b>\n\n'
+            'Отправь что угодно — я превращу это в понятный результат.\n\n'
+            '🎤 голосовое → смысл и действия\n'
+            '📄 документ → сроки, деньги и риски\n'
+            '📸 скриншот → что важно и что делать\n'
+            '💬 сообщение → смысл и готовый ответ\n'
+            '📝 текст → кратко и по делу\n\n'
+            'Можно продолжать обычным языком: «а оплатить когда?», «объясни проще», «что от меня хотят?»',
             reply_markup=main_menu(),
         )
 
@@ -36,22 +41,21 @@ def build_general_router(ctx) -> Router:
     @router.message(F.text == '❓ Помощь')
     async def help_(message: Message):
         await message.answer(
-            'Скинь текст, голосовое, фото, PDF/DOCX/TXT/MD/XLSX/CSV. '
-            'После разбора можно спросить по материалу, получить задачи или подготовить ответ.\n\n'
-            'Команды: /status /ai_status /delete_my_data /cancel_pro'
+            '✨ <b>Clarify умеет</b>\n\n'
+            '• разбирать текст, голосовые, фото, PDF/DOCX/TXT/MD/XLSX/CSV;\n'
+            '• отвечать на вопросы по последнему материалу с контекстом;\n'
+            '• находить риски, суммы, сроки и задачи;\n'
+            '• объяснять сложное простыми словами;\n'
+            '• сравнивать два материала;\n'
+            '• собирать материалы в проекты;\n'
+            '• писать ответы в твоём стиле;\n'
+            '• создавать напоминания.\n\n'
+            'Команды: /status /ai_status /style /delete_my_data /cancel_pro'
         )
 
     @router.message(F.text == '📎 Разобрать')
     async def unpack(message: Message):
-        await message.answer('Отправь сюда текст, голосовое, документ или изображение — я определю тип сам.')
-
-    @router.message(F.text == '🎤 Голосовые')
-    async def voices(message: Message):
-        await message.answer('Отправь голосовое или аудиофайл. Я расшифрую речь, выделю главное, задачи, суммы и сроки.')
-
-    @router.message(F.text == '📄 Документы')
-    async def documents(message: Message):
-        await message.answer('Поддерживаются PDF, DOCX, TXT, MD, XLSX и CSV. Просто прикрепи файл.')
+        await message.answer('Отправь сюда текст, голосовое, документ или скриншот. Clarify сам определит, что с ним полезнее сделать.')
 
     @router.message(F.text == '✍️ Написать')
     async def write(message: Message, state: FSMContext):
@@ -62,10 +66,33 @@ def build_general_router(ctx) -> Router:
     async def settings_view(message: Message):
         user = await get_user(ctx, message.from_user)
         plan = 'PRO' if is_active_pro(user) else 'FREE'
+        style = await ctx.styles.get(user.id)
         await message.answer(
-            f'⚙️ <b>Настройки</b>\n\nЧасовой пояс: {esc(user.timezone or settings.default_timezone)}\n'
-            f'Тариф: {plan}\nAI: {"включён" if settings.ai_enabled else "выключен"}'
+            f'⚙️ <b>Clarify · настройки</b>\n\n'
+            f'Часовой пояс: {esc(user.timezone or settings.default_timezone)}\n'
+            f'Тариф: {plan}\n'
+            f'AI: {"включён" if settings.ai_enabled else "выключен"}\n'
+            f'Fast model: {esc(settings.fast)}\n'
+            f'Smart model: {esc(settings.smart)}\n'
+            f'Мой стиль: {"настроен ✅" if style else "не настроен"}\n\n'
+            'Команда <code>/style</code> — научить Clarify писать в твоём стиле.'
         )
+
+    @router.message(Command('style'))
+    async def style_setup(message: Message, state: FSMContext):
+        await state.set_state(StyleSetup.waiting_profile)
+        await message.answer(
+            '✍️ <b>Мой стиль</b>\n\nОпиши, как Clarify должен писать за тебя. Например:\n'
+            '<i>«Коротко, разговорно, без приветствий, иногда скобочка вместо смайла, без канцелярита»</i>\n\n'
+            'Это описание будет использоваться только при создании текстов и ответов.'
+        )
+
+    @router.message(StyleSetup.waiting_profile, F.text)
+    async def style_save(message: Message, state: FSMContext):
+        user = await get_user(ctx, message.from_user)
+        profile = await ctx.styles.set(user.id, message.text)
+        await state.clear()
+        await message.answer(f'✅ Стиль сохранён:\n<i>{esc(profile)}</i>')
 
     @router.message(Command('status'))
     async def status(message: Message):
@@ -76,7 +103,7 @@ def build_general_router(ctx) -> Router:
             ai_ok = False
         stt_ok = bool(settings.stt_provider)
         await message.answer(
-            f'RAZBERI {settings.version}\n\n'
+            f'Clarify {settings.version}\n\n'
             f'🟢 Telegram\n'
             f'{"🟢" if db_ok else "🔴"} Database\n'
             f'{"🟢" if ai_ok else "🔴"} AI\n'
@@ -90,7 +117,7 @@ def build_general_router(ctx) -> Router:
         endpoint = ctx.ai.endpoint_label
         if ok:
             await message.answer(
-                f'🤖 AI: ON ✅\nEndpoint: {esc(endpoint)}\nModel: {esc(settings.fast)}\nLatency: {latency} sec'
+                f'🤖 AI: ON ✅\nEndpoint: {esc(endpoint)}\nFast: {esc(settings.fast)}\nSmart: {esc(settings.smart)}\nLatency: {latency} sec'
             )
         else:
             await message.answer(
@@ -101,7 +128,7 @@ def build_general_router(ctx) -> Router:
     async def delete_my_data(message: Message):
         await get_user(ctx, message.from_user)
         await message.answer(
-            'Удалить историю материалов, AI-использование и напоминания?\n\n'
+            'Удалить историю материалов, проекты, стиль, AI-использование и напоминания?\n\n'
             'Финансовые записи платежей останутся для корректного учёта.',
             reply_markup=delete_data_confirm(),
         )
@@ -115,7 +142,7 @@ def build_general_router(ctx) -> Router:
         user = await get_user(ctx, callback.from_user)
         await ctx.privacy.delete_user_data(user.id)
         await callback.message.edit_text(
-            '🗑 История материалов, AI-использование и напоминания удалены. '
+            '🗑 История материалов, проекты, стиль, AI-использование и напоминания удалены. '
             'Финансовые записи платежей сохранены.'
         )
         await callback.answer()
@@ -125,9 +152,10 @@ def build_general_router(ctx) -> Router:
         user = await get_user(ctx, message.from_user)
         if not await ensure_quota(ctx, message, user):
             return
-        progress = await message.answer('✍️ Пишу…')
+        progress = await message.answer('✍️ Пишу в твоём стиле…')
         try:
-            raw, usage = await ctx.ai.compose(message.text)
+            style = await ctx.styles.get(user.id)
+            raw, usage = await ctx.ai.compose(message.text, style)
             await ctx.usage.record(user.id, settings.fast, 'compose', usage)
             material = await ctx.materials.create(user.id, 'draft', 'Черновик сообщения', raw, raw)
             await progress.edit_text('✍️ <b>Готовый текст</b>\n\n' + esc(raw), reply_markup=draft_actions(material.id))
@@ -159,13 +187,20 @@ def build_general_router(ctx) -> Router:
         user = await get_user(ctx, message.from_user)
         if not await ensure_quota(ctx, message, user):
             return
-        progress = await message.answer('💬 Разбираю пересланное сообщение…')
+        progress = await message.answer('💬 Clarify понимает сообщение…')
         try:
-            result, usage, model = await ctx.ai.analyze_text(message.text, 'пересланное сообщение')
+            result, usage, model = await ctx.ai.analyze_text(
+                message.text,
+                'пересланное сообщение',
+                model=settings.fast,
+            )
             await ctx.usage.record(user.id, model, 'forwarded', usage)
             material = await ctx.materials.create(user.id, 'forwarded', result.title, message.text, result.summary)
             from app.bot.razberi_keyboards import forwarded_actions
-            await progress.edit_text(result.to_telegram('💬 <b>Сообщение разобрано</b>'), reply_markup=forwarded_actions(material.id))
+            await progress.edit_text(
+                result.to_telegram('💬 <b>Clarify</b> · сообщение разобрано'),
+                reply_markup=forwarded_actions(material.id),
+            )
         except Exception as exc:
             await ctx.errors.record(uuid.uuid4().hex, message.from_user.id, 'forwarded', exc)
             await progress.edit_text('⚠️ Не получилось разобрать сообщение.')
@@ -178,9 +213,11 @@ def build_general_router(ctx) -> Router:
         if not material:
             return await callback.answer('Материал не найден', show_alert=True)
         styles = {'neutral': 'нейтрально', 'friendly': 'дружелюбно', 'short': 'очень коротко', 'humor': 'с лёгким уместным юмором'}
-        prompt = f'Подготовь ответ на сообщение в стиле: {styles.get(mode, mode)}. Верни только готовый ответ.'
-        raw, usage = await ctx.ai.ask(prompt, material.extracted_text)
-        await ctx.usage.record(user.id, settings.smart, 'forward_reply', usage)
+        personal = await ctx.styles.get(user.id)
+        style_note = f' Учитывай стиль пользователя: {personal}.' if personal else ''
+        prompt = f'Подготовь ответ на сообщение в стиле: {styles.get(mode, mode)}.{style_note} Верни только готовый ответ.'
+        raw, usage = await ctx.ai.ask(prompt, material.extracted_text, model=settings.fast)
+        await ctx.usage.record(user.id, settings.fast, 'forward_reply', usage)
         await callback.message.answer('✍️ ' + esc(raw))
         await callback.answer()
 
@@ -201,42 +238,36 @@ def build_general_router(ctx) -> Router:
             local = when.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(user.timezone or settings.default_timezone)).strftime('%d.%m.%Y %H:%M')
             return await message.answer(f'⏰ Напомнить:\n<b>{esc(task)}</b>\n\n{local}', reply_markup=reminder_confirm(reminder.id))
 
-        if text_value == '📎 Отправить что-нибудь':
-            return await message.answer('Отправь текст, файл, фото или голосовое.')
         if text_value == '👑 PRO':
             return await message.answer(
-                f'👑 <b>РАЗБЕРИ PRO</b>\n\n🎤 Длинные голосовые\n📄 Большие документы\n🧠 Полная история\n'
-                f'⏰ Напоминания\n🤖 Улучшенный AI\n⚡ Больше обработок\n\n{settings.pro_stars_price} ⭐ / 30 дней',
+                f'👑 <b>Clarify PRO</b>\n\n🎤 Длинные голосовые\n📄 Большие документы\n🧠 Полная история\n'
+                f'📁 Проекты и сравнение\n⏰ Напоминания\n🤖 Smart AI\n⚡ Больше обработок\n\n{settings.pro_stars_price} ⭐ / 30 дней',
                 reply_markup=pro_button(),
             )
         if not await ensure_quota(ctx, message, user):
             return
 
-        progress = await message.answer('🧠 Разбираю…')
+        progress = await message.answer('✨ Clarify разбирается…')
         try:
             latest = await ctx.materials.latest(user.id, 1)
-            markers = (
-                'а теперь', 'а какие там', 'а сколько', 'а когда', 'что он', 'что она',
-                'когда край', 'сколько там', 'есть ли здесь', 'есть ли там', 'ответь ему',
-                'ответь ей', 'короче', 'сделай короче',
+            recent = (
+                latest[0]
+                if latest
+                and latest[0].created_at
+                and datetime.utcnow() - latest[0].created_at < timedelta(hours=settings.recent_material_hours)
+                else None
             )
-            recent = latest[0] if latest and latest[0].created_at and datetime.utcnow() - latest[0].created_at < timedelta(hours=6) else None
-            if recent and (low.startswith(markers) or low in {'короче', 'ещё короче', 'ответь ему', 'ответь ей'}):
-                if 'короч' in low:
-                    question = 'Сделай содержание этого материала заметно короче. Верни только краткую версию.'
-                elif 'ответь' in low:
-                    question = 'Подготовь короткий естественный ответ отправителю на основе материала. Верни только готовый ответ.'
-                else:
-                    question = text_value
-                context = await ctx.materials.context(user.id, recent.id, question)
-                answer, usage = await ctx.ai.ask(question, context)
-                await ctx.usage.record(user.id, settings.smart, 'context_followup', usage)
+            decision = classify_text_intent(text_value, recent is not None)
+            if recent and decision.uses_recent_material:
+                context = await ctx.materials.context(user.id, recent.id, decision.query or text_value)
+                model = settings.smart if decision.deep else settings.fast
+                answer, usage = await ctx.ai.ask(decision.prompt or text_value, context, model=model)
+                await ctx.usage.record(user.id, model, f'followup_{decision.name}', usage)
                 return await progress.edit_text(esc(answer))
 
             modes = {
                 'сократи': 'короче', 'напиши нормально': 'естественно и грамотно',
                 'сделай официальнее': 'официально', 'переведи на английский': 'переведи на английский',
-                'ответь ему': 'подготовь ответ',
             }
             hit = next((key for key in modes if low.startswith(key + ' ')), None)
             if hit:
@@ -249,7 +280,7 @@ def build_general_router(ctx) -> Router:
                 result, usage, model = await TextProcessor(ctx.ai).process(text_value)
             await ctx.usage.record(user.id, model, 'text', usage)
             material = await ctx.materials.create(user.id, 'text', result.title, text_value, result.summary)
-            await progress.edit_text(result.to_telegram(), reply_markup=actions(material.id))
+            await progress.edit_text(result.to_telegram(), reply_markup=actions(material.id, material.type))
         except Exception as exc:
             await ctx.errors.record(uuid.uuid4().hex, message.from_user.id, 'text', exc)
             await progress.edit_text('⚠️ AI сейчас не смог обработать запрос. Проверь /ai_status или попробуй позже.')

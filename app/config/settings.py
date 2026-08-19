@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Single env-backed configuration for RAZBERI plus legacy PRICE modules."""
+    """Single env-backed configuration for Clarify plus legacy PRICE modules."""
 
     model_config = SettingsConfigDict(
         env_file='.env',
@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     )
 
     # Core
-    app_name: str = 'RAZBERI'
-    version: str = '0.1.0'
+    app_name: str = 'Clarify'
+    version: str = '0.3.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     serve_http: bool = True
     default_timezone: str = 'Europe/Moscow'
 
-    # RAZBERI AI
+    # Clarify AI
     ai_enabled: bool = True
     openai_api_key: str = ''
     openai_base_url: str = ''
@@ -39,8 +39,14 @@ class Settings(BaseSettings):
     vision_model: str = ''
     openai_timeout: float = 60.0
     openai_max_output_tokens: int = 1400
+    fast_text_chars: int = 12_000
+    chunk_parallelism: int = 4
+    retrieval_chunk_limit: int = 5
+    recent_material_hours: int = 12
+    image_max_side: int = 1600
+    image_jpeg_quality: int = 82
 
-    # RAZBERI FREE / PRO
+    # Clarify FREE / PRO
     pro_stars_price: int = 299
     free_daily_ai_limit: int = 10
     pro_daily_ai_limit: int = 150
@@ -50,9 +56,12 @@ class Settings(BaseSettings):
     pro_document_max_pages: int = 200
     max_file_size_mb: int = 25
 
-    # Speech-to-text
+    # Speech-to-text. `remote` is fastest when the configured endpoint supports it;
+    # `local` is the reliable fallback and remains the default for compatibility.
     stt_provider: str = 'local'
     whisper_model: str = 'base'
+    stt_remote_model: str = 'whisper-1'
+    stt_remote_timeout: float = 25.0
     whisper_compute_type: str = 'int8'
     whisper_cache_dir: str = ''
 
@@ -103,8 +112,6 @@ class Settings(BaseSettings):
             return value
         data_path = Path('/data')
         if data_path.exists() and data_path.is_dir():
-            # Reuse the existing Pricebot DB. New RAZBERI tables are prefixed,
-            # so existing users/PRO flags and price-tracker history remain.
             return 'sqlite+aiosqlite:////data/price.db'
         Path('./data').mkdir(parents=True, exist_ok=True)
         return 'sqlite+aiosqlite:///./data/price.db'

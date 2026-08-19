@@ -37,6 +37,32 @@ class MaterialChunk(Base):
     text: Mapped[str] = mapped_column(Text)
 
 
+class Project(Base):
+    __tablename__ = 'razberi_projects'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class ProjectMaterial(Base):
+    __tablename__ = 'razberi_project_materials'
+    __table_args__ = (UniqueConstraint('project_id', 'material_id', name='uq_razberi_project_material'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('razberi_projects.id', ondelete='CASCADE'), index=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey('razberi_materials.id', ondelete='CASCADE'), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserStyle(Base):
+    __tablename__ = 'razberi_user_styles'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), unique=True, index=True)
+    profile: Mapped[str] = mapped_column(Text, default='')
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AIUsage(Base):
     __tablename__ = 'razberi_ai_usage'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

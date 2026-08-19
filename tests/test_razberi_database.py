@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.database.models import User
-from app.services.core import MaterialService, UsageService
+from app.services.core import MaterialService, ProjectService, StyleService, UsageService
 from app.services.reminders import ReminderService
 
 
@@ -64,3 +64,37 @@ async def test_free_limit_counts_actions(db):
     assert await usage.allowed(user) is True
     await usage.record(user.id, 'fake-model', 'analysis', {'input': 1, 'output': 1})
     assert await usage.allowed(user) is False
+
+
+@pytest.mark.asyncio
+async def test_projects_keep_existing_material_schema_untouched(db):
+    database, settings = db
+    async with database.session_factory() as session:
+        user = User(telegram_id=912348, first_name='Project Test')
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+    materials = MaterialService(database, settings)
+    projects = ProjectService(database)
+    material = await materials.create(user.id, 'pdf', 'Договор', 'Цена 50000 рублей. Срок поставки 5 дней.')
+    project = await projects.create(user.id, 'Закупка №42')
+    assert await projects.add_material(user.id, project.id, material.id) is True
+    loaded_project, items = await projects.materials(user.id, project.id)
+    assert loaded_project is not None
+    assert loaded_project.name == 'Закупка №42'
+    assert [item.id for item in items] == [material.id]
+
+
+@pytest.mark.asyncio
+async def test_user_style_roundtrip(db):
+    database, _settings = db
+    async with database.session_factory() as session:
+        user = User(telegram_id=912349, first_name='Style Test')
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+    styles = StyleService(database)
+    await styles.set(user.id, 'Коротко, разговорно, без канцелярита')
+    assert 'разговорно' in await styles.get(user.id)
