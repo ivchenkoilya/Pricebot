@@ -17,6 +17,7 @@ from app.services.core import (
     UsageService,
     UserService,
 )
+from app.services.page_reader import PageReader
 from app.services.reminders import ReminderService
 from app.services.subscriptions import SubscriptionService
 
@@ -37,6 +38,7 @@ class AppContext:
     privacy: PrivacyService
     reminders: ReminderService
     subscriptions: SubscriptionService
+    page_reader: PageReader
     stt: object
     ai_sem: asyncio.Semaphore
     stt_sem: asyncio.Semaphore
@@ -61,6 +63,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         privacy=PrivacyService(db, materials),
         reminders=ReminderService(db),
         subscriptions=SubscriptionService(db),
+        page_reader=PageReader(settings),
         stt=build_stt(settings, ai),
         ai_sem=asyncio.Semaphore(settings.max_ai_concurrency),
         stt_sem=asyncio.Semaphore(settings.max_stt_concurrency),

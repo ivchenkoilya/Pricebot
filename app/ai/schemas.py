@@ -32,3 +32,21 @@ class AnalysisResult(BaseModel):
         if self.warnings:
             parts += ['', f'<b>⚠️ Важно · {len(self.warnings)}</b>'] + [f'• {esc(x)}' for x in self.warnings[:4]]
         return '\n'.join(parts)[:4000]
+
+    def to_compact_telegram(self, prefix: str = '✨ <b>Clarify</b>') -> str:
+        """A mobile-first card: direct answer first, details only when useful."""
+        esc = lambda value: html.escape(str(value))
+        parts = [prefix]
+        if self.summary:
+            parts += ['', f'<b>{esc(self.summary)}</b>']
+        elif self.title and self.title != 'Материал':
+            parts += ['', f'<b>{esc(self.title)}</b>']
+
+        details = self.key_points[:3]
+        if details:
+            parts += ['', *[f'• {esc(item)}' for item in details]]
+        if self.tasks:
+            parts += ['', '<b>✅ Дальше</b>', *[f'☐ {esc(item)}' for item in self.tasks[:3]]]
+        if self.warnings:
+            parts += ['', f'⚠️ {esc(self.warnings[0])}']
+        return '\n'.join(parts)[:2600]

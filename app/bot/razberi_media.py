@@ -30,8 +30,10 @@ def _optimized_image_payload(path: Path, settings) -> tuple[str, str]:
     return base64.b64encode(output.getvalue()).decode(), 'image/jpeg'
 
 
-def _material_text_from_result(result, raw: str = '') -> str:
+def _material_text_from_result(result, raw: str = '', user_instruction: str = '') -> str:
     parts = []
+    if user_instruction:
+        parts.append('Запрос пользователя: ' + user_instruction)
     if getattr(result, 'source_text', ''):
         parts.append(result.source_text)
     if result.summary:
@@ -47,6 +49,16 @@ def _material_text_from_result(result, raw: str = '') -> str:
     if result.warnings:
         parts.append('Важно:\n' + '\n'.join('- ' + item for item in result.warnings))
     return '\n\n'.join(parts).strip() or raw
+
+
+def _vision_instruction(caption: str) -> str:
+    if not caption:
+        return 'Разбери изображение или скриншот. Сначала сформулируй главный смысл максимально конкретно.'
+    return (
+        f'Главная задача пользователя: «{caption}». Ответь прежде всего на неё по изображению. '
+        'Сделай summary прямым ответом в 1–3 предложениях, затем добавь только действительно полезные детали. '
+        'Если нужную деталь не видно или нельзя определить уверенно — прямо скажи об этом.'
+    )
 
 
 def build_media_router(ctx) -> Router:
@@ -111,8 +123,8 @@ def build_media_router(ctx) -> Router:
             )
             await ctx.metrics.inc('voice_processed', user.id)
             await progress.edit_text(
-                result.to_telegram(
-                    f'🎤 <b>Clarify</b> · голосовое {duration // 60:02d}:{duration % 60:02d}'
+                result.to_compact_telegram(
+                    f'🎤 <b>Clarify</b> · {duration // 60:02d}:{duration % 60:02d}'
                 ),
                 reply_markup=actions(material.id, material.type),
             )
@@ -128,14 +140,18 @@ def build_media_router(ctx) -> Router:
         if not await ensure_quota(ctx, message, user):
             return
         photo_item = message.photo[-1]
+        caption = (message.caption or '').strip()
         cached = await ctx.materials.by_file_unique(user.id, photo_item.file_unique_id)
-        if cached:
+        if cached and not caption:
             return await message.answer(
                 '♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title),
                 reply_markup=actions(cached.id, cached.type),
             )
         path = Path(settings.data_dir, 'tmp', uuid.uuid4().hex + '.jpg')
-        progress = await message.answer('📸 <b>Clarify смотрит…</b>\nЧитаю скриншот и сразу выделяю главное')
+        progress = await message.answer(
+            '📸 <b>Clarify смотрит…</b>\nОтвечаю на подпись к фото' if caption
+            else '📸 <b>Clarify смотрит…</b>\nЧитаю изображение и выделяю главное'
+        )
         try:
             await ctx.bot.download(photo_item, destination=path)
             image_b64, image_mime = await asyncio.to_thread(_optimized_image_payload, path, settings)
@@ -143,16 +159,16 @@ def build_media_router(ctx) -> Router:
                 result, vision_usage, model, raw = await ctx.ai.analyze_image(
                     image_b64,
                     image_mime,
-                    'Разбери изображение или скриншот',
+                    _vision_instruction(caption),
                 )
-            await ctx.usage.record(user.id, model, 'image', vision_usage)
-            material_text = _material_text_from_result(result, raw)
+            await ctx.usage.record(user.id, model, 'image_caption' if caption else 'image', vision_usage)
+            material_text = _material_text_from_result(result, raw, caption)
             material = await ctx.materials.create(
                 user.id, 'image', result.title, material_text, result.summary, photo_item.file_id, photo_item.file_unique_id
             )
             await ctx.metrics.inc('images_processed', user.id)
             await progress.edit_text(
-                result.to_telegram('📸 <b>Clarify</b> · изображение разобрано'),
+                result.to_compact_telegram('📸 <b>Clarify</b>'),
                 reply_markup=actions(material.id, material.type),
             )
         except Exception as exc:
@@ -168,6 +184,7 @@ def build_media_router(ctx) -> Router:
         user = await get_user(ctx, message.from_user)
         document_item = message.document
         name = document_item.file_name or 'document'
+        caption = (message.caption or '').strip()
         extension = Path(name).suffix.lower()
         document_extensions = {'.pdf', '.docx', '.txt', '.md', '.xlsx', '.csv'}
         image_extensions = {'.jpg', '.jpeg', '.png', '.webp'}
@@ -180,7 +197,7 @@ def build_media_router(ctx) -> Router:
             return await message.answer('⚠️ Исполняемые файлы не принимаются.')
 
         cached = await ctx.materials.by_file_unique(user.id, document_item.file_unique_id)
-        if cached:
+        if cached and not caption:
             return await message.answer(
                 '♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title),
                 reply_markup=actions(cached.id, cached.type),
@@ -189,7 +206,7 @@ def build_media_router(ctx) -> Router:
             return
 
         path = Path(settings.data_dir, 'tmp', uuid.uuid4().hex + extension)
-        progress = await message.answer('📄 <b>Clarify читает файл…</b>\n1/2 · Извлекаю текст локально')
+        progress = await message.answer('📄 <b>Clarify читает файл…</b>\n1/2 · Извлекаю содержимое')
         try:
             await ctx.bot.download(document_item, destination=path)
             if extension in image_extensions:
@@ -198,16 +215,17 @@ def build_media_router(ctx) -> Router:
                     result, usage, model, raw = await ctx.ai.analyze_image(
                         image_b64,
                         image_mime,
-                        'Разбери изображение или скриншот',
+                        _vision_instruction(caption),
                     )
-                await ctx.usage.record(user.id, model, 'image', usage)
+                await ctx.usage.record(user.id, model, 'image_caption' if caption else 'image', usage)
                 material = await ctx.materials.create(
-                    user.id, 'image', result.title or name, _material_text_from_result(result, raw), result.summary,
+                    user.id, 'image', result.title or name,
+                    _material_text_from_result(result, raw, caption), result.summary,
                     document_item.file_id, document_item.file_unique_id,
                 )
                 await ctx.metrics.inc('images_processed', user.id)
                 return await progress.edit_text(
-                    result.to_telegram('📸 <b>Clarify</b> · изображение разобрано'),
+                    result.to_compact_telegram('📸 <b>Clarify</b>'),
                     reply_markup=actions(material.id, material.type),
                 )
 
@@ -243,6 +261,26 @@ def build_media_router(ctx) -> Router:
                     '⚠️ В документе почти нет извлекаемого текста. Если это скан, выбранная AI-модель должна поддерживать vision.'
                 )
 
+            page_text = f' · {pages} стр.' if pages else ''
+            if caption:
+                await progress.edit_text('📄 <b>Clarify читает файл…</b>\n2/2 · Отвечаю на подпись к документу')
+                prompt = (
+                    f'{caption}\n\nОтветь прямо по документу. Не выдумывай. '
+                    'Если в тексте есть маркер [Страница N], укажи страницу для ключевого факта.'
+                )
+                async with ctx.ai_sem:
+                    answer, usage = await ctx.ai.ask(prompt, text, model=settings.fast)
+                await ctx.usage.record(user.id, settings.fast, 'document_caption', usage)
+                material = await ctx.materials.create(
+                    user.id, kind, name, text, answer[:4000],
+                    document_item.file_id, document_item.file_unique_id,
+                )
+                await ctx.metrics.inc('documents_processed', user.id)
+                return await progress.edit_text(
+                    f'📄 <b>Clarify</b>{page_text}\n\n{esc(answer)}',
+                    reply_markup=actions(material.id, material.type),
+                )
+
             await progress.edit_text('📄 <b>Clarify читает файл…</b>\n2/2 · Собираю главное, сроки и риски')
             async with ctx.ai_sem:
                 result, usage, model = await TextProcessor(ctx.ai).process(text, kind)
@@ -252,7 +290,6 @@ def build_media_router(ctx) -> Router:
                 document_item.file_id, document_item.file_unique_id,
             )
             await ctx.metrics.inc('documents_processed', user.id)
-            page_text = f' · {pages} стр.' if pages else ''
             await progress.edit_text(
                 result.to_telegram(f'📄 <b>Clarify</b> · документ{page_text}'),
                 reply_markup=actions(material.id, material.type),
