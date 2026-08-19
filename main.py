@@ -11,11 +11,13 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from fastapi import FastAPI
 
+from app.bot.ai_handlers import create_ai_router
 from app.bot.handlers import create_router
 from app.bot.middlewares import UserRateLimitMiddleware
 from app.config.settings import get_settings
 from app.database.session import Database
 from app.scheduler.runner import PriceScheduler
+from app.services.ai import AIService
 from app.trackers.registry import ProviderRegistry
 
 settings = get_settings()
@@ -50,12 +52,18 @@ async def main() -> None:
     db = Database(settings)
     await db.init()
     registry = ProviderRegistry(settings)
+    ai = AIService(settings)
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     scheduler = PriceScheduler(db, registry, bot, settings)
     dp = Dispatcher(storage=MemoryStorage())
     limiter = UserRateLimitMiddleware(settings.user_rate_limit_per_minute)
     dp.message.middleware(limiter)
     dp.callback_query.middleware(limiter)
+
+    # AI router is deliberately before the core router, but it only handles
+    # ordinary non-URL text while no FSM dialog is active. Price URLs and
+    # target-price dialogs therefore keep deterministic non-AI behavior.
+    dp.include_router(create_ai_router(ai))
     dp.include_router(create_router(settings, db, registry, scheduler))
 
     tasks = [
@@ -64,13 +72,14 @@ async def main() -> None:
     ]
     if settings.serve_http:
         tasks.append(asyncio.create_task(run_http(), name='http'))
-    log.info('PRICE %s starting', settings.version)
+    log.info('PRICE %s starting ai=%s model=%s', settings.version, 'on' if ai.enabled else 'off', settings.openai_model)
     try:
         await asyncio.gather(*tasks)
     finally:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await ai.close()
         await bot.session.close()
         await db.close()
         log.info('PRICE stopped')
