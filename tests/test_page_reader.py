@@ -34,6 +34,33 @@ def test_direct_page_reader_extracts_product_context():
     assert 'ignore me' not in result.text
 
 
+def test_ozon_connection_error_page_is_not_accepted_as_product():
+    reader = PageReader(_settings(page_reader_min_chars=10))
+    result = PageReadResult(
+        requested_url='https://ozon.ru/t/example',
+        final_url='https://ozon.ru/t/example',
+        title='Похоже, нет соединения',
+        description=None,
+        text='Похоже, нет соединения. Проверьте подключение к интернету и попробуйте ещё раз.',
+        source='jina-reader',
+    )
+    assert reader._useful(result) is False
+
+
+def test_resolved_ozon_product_url_preserves_public_slug_and_id():
+    reader = PageReader(_settings())
+    result = reader._from_ozon_product_url(
+        'https://ozon.ru/t/example',
+        'https://www.ozon.ru/product/sony-wh-1000xm6-chernyy-1234567890/',
+    )
+    assert result is not None
+    assert result.source == 'resolved-url'
+    assert result.final_url.endswith('/sony-wh-1000xm6-chernyy-1234567890/')
+    assert 'Sony wh 1000xm6 chernyy' in result.title
+    assert '1234567890' in result.text
+    assert reader._ozon_product_id(result.final_url) == '1234567890'
+
+
 class FakeReader:
     async def read(self, url):
         return PageReadResult(
