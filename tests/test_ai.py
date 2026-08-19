@@ -27,9 +27,20 @@ class FakeResponses:
         )
 
 
+class FakeChatCompletions:
+    def __init__(self):
+        self.kwargs = None
+
+    async def create(self, **kwargs):
+        self.kwargs = kwargs
+        content = '{"is_product":true,"action":"identify","brand":"Sony","model":"WH-1000XM6","variant":null,"normalized_name":"Sony WH-1000XM6","search_query":"Sony WH-1000XM6","target_price":null,"target_percent":null,"confidence":0.99}'
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
 class FakeClient:
     def __init__(self):
         self.responses = FakeResponses()
+        self.chat = SimpleNamespace(completions=FakeChatCompletions())
 
 
 @pytest.mark.asyncio
@@ -60,6 +71,39 @@ async def test_ai_uses_structured_responses_without_storage():
     assert client.responses.kwargs['model'] == 'gpt-5-mini'
     assert client.responses.kwargs['store'] is False
     assert client.responses.kwargs['text_format'] is ProductIntent
+
+
+@pytest.mark.asyncio
+async def test_ai_custom_gateway_uses_chat_completions():
+    settings = Settings(
+        database_url='sqlite+aiosqlite:///:memory:',
+        openai_api_key='sk-test',
+        openai_base_url='https://gateway.example/v1',
+        openai_model='some-model',
+    )
+    client = FakeClient()
+    service = AIService(settings, client=client)
+    result = await service.analyze_product_text('Sony WH-1000XM6')
+
+    assert service.endpoint_label == 'gateway.example'
+    assert result is not None
+    assert result.brand == 'Sony'
+    assert result.model == 'WH-1000XM6'
+    assert client.chat.completions.kwargs['model'] == 'some-model'
+
+
+@pytest.mark.asyncio
+async def test_ai_probe_custom_gateway():
+    settings = Settings(
+        database_url='sqlite+aiosqlite:///:memory:',
+        openai_api_key='sk-test',
+        openai_base_url='https://gateway.example/v1',
+        openai_model='some-model',
+    )
+    service = AIService(settings, client=FakeClient())
+    probe = await service.probe()
+    assert probe.ok is True
+    assert probe.code == 'ok'
 
 
 def test_ai_text_filter_does_not_intercept_deterministic_flows():

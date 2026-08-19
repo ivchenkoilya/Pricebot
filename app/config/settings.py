@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     ai_enabled: bool = True
     openai_api_key: str = ''
+    openai_base_url: str = ''
     openai_model: str = 'gpt-5-mini'
     openai_timeout: float = 15.0
     openai_max_output_tokens: int = 300
@@ -70,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def ai_available(self) -> bool:
         return bool(self.ai_enabled and self.openai_api_key.strip())
+
+    @property
+    def ai_uses_custom_endpoint(self) -> bool:
+        return bool(self.openai_base_url.strip())
 
 
 @lru_cache(maxsize=1)

@@ -48,10 +48,30 @@ def create_ai_router(ai: AIService) -> Router:
 
     @router.message(Command('ai_status'))
     async def ai_status(message: Message):
-        if ai.enabled:
-            await message.answer(f'🤖 AI: <b>ON</b>\nМодель: <code>{html.escape(ai.settings.openai_model)}</code>')
-        else:
-            await message.answer('🤖 AI: <b>OFF</b>\nДобавь OPENAI_API_KEY в secrets Amvera и перезапусти приложение.')
+        if not ai.enabled:
+            return await message.answer(
+                '🤖 AI: <b>OFF</b>\n'
+                'OPENAI_API_KEY не задан или AI отключён. После изменения переменных Amvera нужен Restart/Redeploy.'
+            )
+
+        await message.answer('🤖 Проверяю AI API…')
+        probe = await ai.probe()
+        endpoint = html.escape(ai.endpoint_label)
+        model = html.escape(ai.settings.openai_model)
+        if probe.ok:
+            return await message.answer(
+                f'🤖 AI: <b>ON ✅</b>\n'
+                f'Endpoint: <code>{endpoint}</code>\n'
+                f'Модель: <code>{model}</code>\n'
+                f'{html.escape(probe.message)}'
+            )
+        await message.answer(
+            f'🤖 AI: <b>ERROR ❌</b>\n'
+            f'Endpoint: <code>{endpoint}</code>\n'
+            f'Модель: <code>{model}</code>\n'
+            f'Код: <code>{html.escape(probe.code)}</code>\n'
+            f'{html.escape(probe.message)}'
+        )
 
     if not ai.enabled:
         return router
@@ -61,7 +81,8 @@ def create_ai_router(ai: AIService) -> Router:
         intent = await ai.analyze_product_text(message.text or '')
         if intent is None:
             return await message.answer(
-                '🤖 AI сейчас не смог разобрать сообщение. Пришли ссылку на товар — обычное отслеживание PRICE продолжает работать.'
+                '🤖 AI сейчас не смог разобрать сообщение. Отправь /ai_status — он покажет, работает ли ключ, endpoint и модель.\n'
+                'Ссылки и обычное отслеживание PRICE продолжают работать независимо от AI.'
             )
 
         if not intent.is_product or intent.confidence < 0.45:
