@@ -15,13 +15,15 @@ def parse_price(value: object) -> Decimal | None:
         except InvalidOperation:
             return None
 
-    text = str(value).replace('\xa0', ' ').strip()
+    text = str(value).strip()
     # Extract only the numeric token. This deliberately excludes punctuation
     # from currency abbreviations such as the trailing dot in "руб.".
     match = re.search(r'\d(?:[\d\s.,]*\d)?', text)
     if not match:
         return None
-    cleaned = match.group(0).replace(' ', '')
+    # Shops frequently use NBSP, thin space or narrow NBSP as a thousands
+    # separator. Remove every Unicode whitespace character, not only ASCII space.
+    cleaned = re.sub(r'\s+', '', match.group(0))
 
     if ',' in cleaned and '.' in cleaned:
         if cleaned.rfind(',') > cleaned.rfind('.'):
