@@ -9,24 +9,37 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
-from app.bot.ai_handlers import create_ai_router
-from app.bot.handlers import create_router
-from app.bot.middlewares import UserRateLimitMiddleware
+from app.bot.razberi_handlers import build_router
+from app.bot.razberi_middlewares import RateLimitMiddleware
 from app.config.settings import get_settings
+from app.context import build_context
 from app.database.session import Database
-from app.scheduler.runner import PriceScheduler
-from app.services.ai import AIService
-from app.trackers.registry import ProviderRegistry
 
 settings = get_settings()
-app = FastAPI(title='PRICE health', docs_url=None, redoc_url=None)
+app = FastAPI(title='RAZBERI health', version=settings.version, docs_url=None, redoc_url=None)
+_runtime_db: Database | None = None
+_scheduler_running = False
+_bot_initialized = False
 
 
 @app.get('/health')
 async def health() -> dict[str, str]:
     return {'status': 'ok', 'app': settings.app_name, 'version': settings.version}
+
+
+@app.get('/ready')
+async def ready() -> dict[str, object]:
+    db_ok = bool(_runtime_db and await _runtime_db.ping())
+    ok = db_ok and _bot_initialized and _scheduler_running
+    return {
+        'status': 'ready' if ok else 'not_ready',
+        'database': db_ok,
+        'bot_initialized': _bot_initialized,
+        'scheduler': _scheduler_running,
+    }
 
 
 def configure_logging() -> None:
@@ -38,51 +51,80 @@ def configure_logging() -> None:
 
 
 async def run_http() -> None:
-    config = uvicorn.Config(app, host='0.0.0.0', port=settings.port, log_level='info')
-    server = uvicorn.Server(config)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host='0.0.0.0', port=settings.port, log_level='info')
+    )
     await server.serve()
 
 
 async def main() -> None:
+    global _runtime_db, _scheduler_running, _bot_initialized
+
     configure_logging()
-    log = logging.getLogger('price.main')
+    log = logging.getLogger('razberi.main')
+    settings.ensure_dirs()
     if not settings.bot_token:
         raise RuntimeError('BOT_TOKEN is required. Add it as an environment variable; never commit it to GitHub.')
 
     db = Database(settings)
+    _runtime_db = db
     await db.init()
-    registry = ProviderRegistry(settings)
-    ai = AIService(settings)
-    bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    scheduler = PriceScheduler(db, registry, bot, settings)
-    dp = Dispatcher(storage=MemoryStorage())
-    limiter = UserRateLimitMiddleware(settings.user_rate_limit_per_minute)
-    dp.message.middleware(limiter)
-    dp.callback_query.middleware(limiter)
 
-    # AI router is deliberately before the core router, but it only handles
-    # ordinary non-URL text while no FSM dialog is active. Price URLs and
-    # target-price dialogs therefore keep deterministic non-AI behavior.
-    dp.include_router(create_ai_router(ai))
-    dp.include_router(create_router(settings, db, registry, scheduler))
+    bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    _bot_initialized = True
+    ctx = build_context(settings, db, bot)
+
+    dispatcher = Dispatcher(storage=MemoryStorage())
+    limiter = RateLimitMiddleware(settings.requests_per_minute, settings.max_active_jobs_per_user)
+    dispatcher.message.outer_middleware(limiter)
+    dispatcher.callback_query.outer_middleware(limiter)
+    dispatcher.include_router(build_router(ctx))
+
+    scheduler = AsyncIOScheduler(timezone='UTC')
+
+    async def send_due_reminders() -> None:
+        for reminder, telegram_id in await ctx.reminders.due():
+            try:
+                await bot.send_message(telegram_id, f'⏰ <b>Напоминание</b>\n\n{reminder.text}')
+            except Exception as exc:
+                await ctx.errors.record(f'reminder-{reminder.id}', telegram_id, 'reminder_send', exc)
+
+    scheduler.add_job(send_due_reminders, 'interval', seconds=20, max_instances=1, coalesce=True)
+    scheduler.add_job(ctx.materials.cleanup_expired, 'cron', hour=4, minute=10, max_instances=1, coalesce=True)
+    scheduler.start()
+    _scheduler_running = True
 
     tasks = [
-        asyncio.create_task(dp.start_polling(bot), name='telegram'),
-        asyncio.create_task(scheduler.loop(), name='scheduler'),
+        asyncio.create_task(
+            dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types()),
+            name='telegram',
+        )
     ]
     if settings.serve_http:
         tasks.append(asyncio.create_task(run_http(), name='http'))
-    log.info('PRICE %s starting ai=%s model=%s', settings.version, 'on' if ai.enabled else 'off', settings.openai_model)
+
+    log.info(
+        'RAZBERI %s starting ai=%s endpoint=%s model=%s stt=%s',
+        settings.version,
+        'on' if settings.ai_available else 'off',
+        ctx.ai.endpoint_label,
+        settings.openai_model,
+        settings.stt_provider,
+    )
     try:
         await asyncio.gather(*tasks)
     finally:
+        _scheduler_running = False
+        scheduler.shutdown(wait=False)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await ai.close()
+        await ctx.ai.close()
         await bot.session.close()
         await db.close()
-        log.info('PRICE stopped')
+        _runtime_db = None
+        _bot_initialized = False
+        log.info('RAZBERI stopped')
 
 
 if __name__ == '__main__':

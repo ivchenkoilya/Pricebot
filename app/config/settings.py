@@ -8,23 +8,68 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore', validate_default=True)
+    """Single env-backed configuration for RAZBERI plus legacy PRICE modules."""
 
-    app_name: str = 'PRICE'
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore',
+        validate_default=True,
+    )
+
+    # Core
+    app_name: str = 'RAZBERI'
     version: str = '0.1.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
     database_url: str = ''
+    data_dir: str = ''
     port: int = 8080
     serve_http: bool = True
     default_timezone: str = 'Europe/Moscow'
 
+    # RAZBERI AI
+    ai_enabled: bool = True
+    openai_api_key: str = ''
+    openai_base_url: str = ''
+    openai_model: str = 'gpt-5-mini'
+    fast_model: str = ''
+    smart_model: str = ''
+    vision_model: str = ''
+    openai_timeout: float = 60.0
+    openai_max_output_tokens: int = 1400
+
+    # RAZBERI FREE / PRO
+    pro_stars_price: int = 299
+    free_daily_ai_limit: int = 10
+    pro_daily_ai_limit: int = 150
+    free_voice_daily_limit: int = 3
+    free_voice_max_seconds: int = 120
+    free_document_max_pages: int = 10
+    pro_document_max_pages: int = 200
+    max_file_size_mb: int = 25
+
+    # Speech-to-text
+    stt_provider: str = 'local'
+    whisper_model: str = 'base'
+    whisper_compute_type: str = 'int8'
+    whisper_cache_dir: str = ''
+
+    # Concurrency / privacy
+    max_ai_concurrency: int = 4
+    max_stt_concurrency: int = 1
+    max_document_concurrency: int = 2
+    max_active_jobs_per_user: int = 2
+    requests_per_minute: int = 30
+    material_ttl_days: int = 30
+    max_material_chars: int = 400_000
+
+    # Legacy PRICE settings retained so old modules/tests stay import-compatible.
     check_interval_free_hours: int = 12
     check_interval_pro_hours: int = 2
     free_watch_limit: int = 3
     pro_watch_limit: int = 50
-    pro_stars_price: int = 199
     request_timeout: float = 20.0
     max_provider_failures: int = 5
     provider_batch_size: int = 20
@@ -38,16 +83,6 @@ class Settings(BaseSettings):
     max_response_bytes: int = 2_000_000
     provider_user_agent: str = 'PRICE/0.1 (+Telegram price tracker; respectful fetcher)'
     disabled_providers: str = ''
-
-    ai_enabled: bool = True
-    openai_api_key: str = ''
-    openai_base_url: str = ''
-    openai_model: str = 'gpt-5-mini'
-    openai_timeout: float = 15.0
-    openai_max_output_tokens: int = 300
-
-    # Public-page reading. Direct HTTP is attempted first; Jina Reader is only
-    # a browser-rendered fallback and does not bypass login/CAPTCHA/access rules.
     page_reader_jina_enabled: bool = True
     jina_reader_api_key: str = ''
     page_reader_timeout: float = 25.0
@@ -57,7 +92,7 @@ class Settings(BaseSettings):
     @field_validator('admin_telegram_id', mode='before')
     @classmethod
     def empty_admin_to_none(cls, value):
-        if value in ('', None):
+        if value in ('', None, 0, '0'):
             return None
         return int(value)
 
@@ -68,9 +103,33 @@ class Settings(BaseSettings):
             return value
         data_path = Path('/data')
         if data_path.exists() and data_path.is_dir():
+            # Reuse the existing Pricebot DB. New RAZBERI tables are prefixed,
+            # so existing users/PRO flags and price-tracker history remain.
             return 'sqlite+aiosqlite:////data/price.db'
         Path('./data').mkdir(parents=True, exist_ok=True)
         return 'sqlite+aiosqlite:///./data/price.db'
+
+    @field_validator('data_dir', mode='before')
+    @classmethod
+    def default_data_dir(cls, value):
+        if value:
+            return str(value)
+        data_path = Path('/data')
+        if data_path.exists() and data_path.is_dir():
+            return '/data'
+        return './data'
+
+    @property
+    def fast(self) -> str:
+        return self.fast_model.strip() or self.openai_model.strip()
+
+    @property
+    def smart(self) -> str:
+        return self.smart_model.strip() or self.openai_model.strip()
+
+    @property
+    def vision(self) -> str:
+        return self.vision_model.strip() or self.smart_model.strip() or self.openai_model.strip()
 
     @property
     def disabled_provider_set(self) -> set[str]:
@@ -78,11 +137,21 @@ class Settings(BaseSettings):
 
     @property
     def ai_available(self) -> bool:
-        return bool(self.ai_enabled and self.openai_api_key.strip())
+        return bool(self.ai_enabled and self.openai_api_key.strip() and self.openai_model.strip())
 
     @property
     def ai_uses_custom_endpoint(self) -> bool:
         return bool(self.openai_base_url.strip())
+
+    def ensure_dirs(self) -> None:
+        base = Path(self.data_dir)
+        base.mkdir(parents=True, exist_ok=True)
+        (base / 'tmp').mkdir(parents=True, exist_ok=True)
+        Path(self.resolved_whisper_cache_dir).mkdir(parents=True, exist_ok=True)
+
+    @property
+    def resolved_whisper_cache_dir(self) -> str:
+        return self.whisper_cache_dir or str(Path(self.data_dir) / 'whisper-cache')
 
 
 @lru_cache(maxsize=1)
