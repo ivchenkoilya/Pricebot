@@ -13,11 +13,20 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install dependencies
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
-      - name: Compile
+      - name: Install Mini App dependencies
+        run: npm install --prefix webapp --no-audit --no-fund
+      - name: Compile Python
         run: python -m compileall -q app main.py
-      - name: Tests
+      - name: Python tests
         run: pytest -q
+      - name: TypeScript check
+        run: npm run check --prefix webapp
+      - name: Frontend build
+        run: npm run build --prefix webapp
       - name: Docker build
-        run: docker build -t razberi:test .
+        run: docker build -t clarify:test .
