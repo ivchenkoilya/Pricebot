@@ -3,22 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#071125" />
-    <title>Clarify</title>
+    <meta name="theme-color" content="#061126" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Clarify — AI Workspace inside Telegram" />
+    <title>Clarify · AI Workspace</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-      html,body,#root{margin:0;min-height:100%;background:#071125;color:#f7fbff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-      .boot{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:radial-gradient(circle at 50% 0,rgba(38,126,255,.22),transparent 38%),#071125}
-      .boot-card{width:min(100%,420px);padding:22px;border:1px solid rgba(133,194,255,.18);border-radius:24px;background:rgba(17,32,59,.78);text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)}
-      .boot-orb{width:34px;height:34px;margin:0 auto 14px;border:3px solid rgba(95,210,255,.2);border-top-color:#55d8ff;border-radius:50%;animation:spin .9s linear infinite}
-      .boot-card b{display:block;font-size:20px;margin-bottom:7px}.boot-card span{color:#8fa4c5;font-size:13px;line-height:1.5}
-      @keyframes spin{to{transform:rotate(360deg)}}
+      html,body,#root{margin:0;min-height:100%;background:#061126;color:#f7fbff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      .boot{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:radial-gradient(circle at 15% 0,rgba(38,126,255,.18),transparent 36%),radial-gradient(circle at 90% 20%,rgba(133,82,255,.13),transparent 32%),#061126}
+      .boot-card{width:min(100%,420px);padding:28px 22px;border:1px solid rgba(133,194,255,.14);border-radius:28px;background:linear-gradient(145deg,rgba(17,36,68,.82),rgba(10,24,49,.82));text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.28)}
+      .boot-mark{width:58px;height:58px;margin:0 auto 16px;display:grid;place-items:center;border-radius:20px;background:linear-gradient(145deg,#25c4ff,#526fff 52%,#9664ff);box-shadow:0 0 35px rgba(82,111,255,.35);font-size:24px;animation:pulse 1.6s ease-in-out infinite}
+      .boot-card b{display:block;font-size:22px;letter-spacing:-.04em;margin-bottom:7px}.boot-card span{color:#8fa4c5;font-size:12px;line-height:1.5}
+      @keyframes pulse{0%,100%{transform:scale(.97);opacity:.78}50%{transform:scale(1.04);opacity:1}}
     </style>
   </head>
   <body>
     <div id="root">
       <div class="boot" id="clarify-boot">
-        <div class="boot-card"><div class="boot-orb"></div><b>Clarify</b><span>Открываю Mini App…</span></div>
+        <div class="boot-card"><div class="boot-mark">✦</div><b>Clarify</b><span>Открываю AI Workspace…</span></div>
       </div>
     </div>
     <script>
