@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 import uvicorn
 from aiogram import Bot, Dispatcher
@@ -10,19 +11,53 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.bot.razberi_handlers import build_router
 from app.bot.razberi_middlewares import RateLimitMiddleware
 from app.config.settings import get_settings
 from app.context import build_context
 from app.database.session import Database
+from app.webapp import webapp_api_router
 
 settings = get_settings()
-app = FastAPI(title='Clarify health', version=settings.version, docs_url=None, redoc_url=None)
+app = FastAPI(title='Clarify', version=settings.version, docs_url=None, redoc_url=None)
+app.state.settings = settings
+app.state.ctx = None
+app.include_router(webapp_api_router)
+
+if settings.cors_origin_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=False,
+        allow_methods=['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        allow_headers=['Authorization', 'Content-Type', 'X-Telegram-Init-Data'],
+    )
+
+ROOT = Path(__file__).resolve().parent
+WEBAPP_DIST = ROOT / 'webapp' / 'dist'
+BANNER = ROOT / 'assets' / 'clarify_banner.webp'
+app.mount('/app', StaticFiles(directory=str(WEBAPP_DIST), html=True, check_dir=False), name='webapp')
+
 _runtime_db: Database | None = None
 _scheduler_running = False
 _bot_initialized = False
+
+
+@app.get('/')
+async def root():
+    return RedirectResponse('/app/')
+
+
+@app.get('/assets/clarify-banner.webp')
+async def clarify_banner():
+    if not BANNER.exists():
+        raise HTTPException(404, 'Banner not found')
+    return FileResponse(BANNER, media_type='image/webp', headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.get('/health')
@@ -39,6 +74,7 @@ async def ready() -> dict[str, object]:
         'database': db_ok,
         'bot_initialized': _bot_initialized,
         'scheduler': _scheduler_running,
+        'webapp_build': (WEBAPP_DIST / 'index.html').exists(),
     }
 
 
@@ -51,9 +87,7 @@ def configure_logging() -> None:
 
 
 async def run_http() -> None:
-    server = uvicorn.Server(
-        uvicorn.Config(app, host='0.0.0.0', port=settings.port, log_level='info')
-    )
+    server = uvicorn.Server(uvicorn.Config(app, host='0.0.0.0', port=settings.port, log_level='info'))
     await server.serve()
 
 
@@ -73,6 +107,7 @@ async def main() -> None:
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     _bot_initialized = True
     ctx = build_context(settings, db, bot)
+    app.state.ctx = ctx
 
     dispatcher = Dispatcher(storage=MemoryStorage())
     limiter = RateLimitMiddleware(settings.requests_per_minute, settings.max_active_jobs_per_user)
@@ -104,13 +139,14 @@ async def main() -> None:
         tasks.append(asyncio.create_task(run_http(), name='http'))
 
     log.info(
-        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s stt=%s',
+        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s stt=%s webapp=%s',
         settings.version,
         'on' if settings.ai_available else 'off',
         ctx.ai.endpoint_label,
         settings.fast,
         settings.smart,
         settings.stt_provider,
+        settings.webapp_url or '/app/',
     )
     try:
         await asyncio.gather(*tasks)
@@ -123,6 +159,7 @@ async def main() -> None:
         await ctx.ai.close()
         await bot.session.close()
         await db.close()
+        app.state.ctx = None
         _runtime_db = None
         _bot_initialized = False
         log.info('Clarify stopped')

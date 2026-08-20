@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.5.1'
+    version: str = '0.6.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     port: int = 8080
     serve_http: bool = True
     default_timezone: str = 'Europe/Moscow'
+
+    # Telegram Mini App
+    webapp_url: str = ''
+    webapp_auth_max_age_seconds: int = 86_400
+    webapp_dev_auth: bool = False
+    webapp_cors_origins: str = ''
 
     # Clarify AI
     ai_enabled: bool = True
@@ -56,8 +62,7 @@ class Settings(BaseSettings):
     pro_document_max_pages: int = 200
     max_file_size_mb: int = 25
 
-    # Speech-to-text. `remote` is fastest when the configured endpoint supports it;
-    # `local` is the reliable fallback and remains the default for compatibility.
+    # Speech-to-text
     stt_provider: str = 'local'
     whisper_model: str = 'base'
     stt_remote_model: str = 'whisper-1'
@@ -141,6 +146,10 @@ class Settings(BaseSettings):
     @property
     def disabled_provider_set(self) -> set[str]:
         return {item.strip().lower() for item in self.disabled_providers.split(',') if item.strip()}
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [item.strip().rstrip('/') for item in self.webapp_cors_origins.split(',') if item.strip()]
 
     @property
     def ai_available(self) -> bool:

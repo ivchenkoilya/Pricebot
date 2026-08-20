@@ -1,258 +1,146 @@
-# Clarify 0.5.0 — COPILOT
+# Clarify 0.6.0 — MINI APP
 
 **Send anything. Get clarity.**
 
-Clarify — Telegram AI-помощник для текста, голосовых, документов, изображений, ссылок и переписки. Он не просто делает выжимку: Clarify запоминает рабочий контекст, отвечает на уточнения и помогает понять, что делать дальше.
+Clarify — Telegram AI-инбокс: пользователь пересылает голосовое, документ, фото, скриншот, ссылку или переписку и получает суть, задачи, сроки, суммы, риски и следующие действия. Версия 0.6 добавляет полноценное Telegram Mini App поверх существующего бота.
 
-Проект является продолжением существующего `Pricebot`. Сохраняются GitHub/Amvera-инфраструктура, `/data/price.db`, пользователи, PRO-состояния, Stars-платежи и legacy-модули Pricebot.
+Это продолжение существующего `Pricebot`, а не новый проект. Сохраняются `/data/price.db`, пользователи, материалы, проекты, PRO/Stars, owner-доступ, Amvera и legacy-модули.
 
-## Главное в 0.5 COPILOT
+## Clarify 0.6
 
-### 🔗 Ссылки
+### Новый `/start`
 
-Можно отправить обычный URL:
+`/start` отправляет фирменный баннер `assets/clarify_banner.webp`, короткое коммерческое приветствие и inline-действия:
 
-```text
-https://example.com/article
-```
+- 🚀 Открыть Clarify;
+- 📎 Разобрать;
+- 🧠 Мои материалы;
+- 👑 PRO;
+- ❓ Как пользоваться.
 
-Clarify прочитает публичную страницу и сделает разбор.
+Если `WEBAPP_URL` не настроен, бот не падает: WebApp-кнопка просто не показывается.
 
-Можно сразу задать задачу:
+### Telegram Mini App
 
-```text
-https://example.com/article что здесь главное?
-```
+Frontend находится в `webapp/` и использует React + Vite + TypeScript без тяжёлого UI-фреймворка. Production build раздаётся тем же FastAPI по `/app/`, поэтому не нужен второй сервер.
 
-Тогда бот отвечает именно на вопрос и сохраняет страницу как материал для дальнейшего диалога.
+Основные экраны:
 
-Чтение использует существующий безопасный `PageReader`: direct HTML → Jina Reader fallback → публичный URL fallback. Login, CAPTCHA и access-control не обходятся.
-
-### 🧠 Контекст нескольких материалов
-
-Clarify больше не привязан только к последнему файлу. Он выбирает небольшой рабочий набор из недавних материалов по смыслу и ссылкам вроде:
-
-```text
-а оплатить когда?
-а что было во втором?
-что там было про гарантию?
-а если задержат?
-```
-
-Например, если подряд отправить фото, договор и голосовое, вопрос про гарантию может вернуться к договору, а не к самому последнему материалу.
-
-### 📸 Фото + подпись
-
-Подпись становится задачей для vision-модели:
-
-```text
-[фото] что у него на голове?
-[скрин] что здесь не так?
-```
-
-Clarify сначала отвечает на вопрос, а не выдаёт универсальный шаблон разбора.
-
-### 📄 Документ + подпись
-
-То же работает с PDF/DOCX/TXT/XLSX/CSV:
-
-```text
-[PDF] когда нужно оплатить?
-[договор] какие здесь риски?
-```
-
-Если PDF содержит маркеры страниц, ответ должен указывать страницу для ключевого факта.
-
-### 📚 Источники и страницы
-
-PDF извлекается с маркерами:
-
-```text
-[Страница 7]
-...
-```
-
-При chunking номер текущей страницы переносится в кусок даже если разрез произошёл посередине страницы. Q&A получает инструкцию не придумывать номер страницы и ссылаться только на маркеры, реально присутствующие в retrieved-контексте.
-
-### ⚡ Короткие карточки
-
-Фото и голосовые теперь показывают прямой вывод первым. Большие блоки `Коротко / Главное / ...` не выводятся автоматически, если можно ответить компактнее.
-
-### 👁 Vision без уверенных догадок
-
-Если визуальную деталь нельзя определить уверенно, модель должна прямо сообщить неопределённость. Уточняющие вопросы по недавно отправленному фото повторно открывают сохранённый Telegram `file_id` и смотрят исходное изображение.
-
-## Что умеет Clarify
-
-- текст и длинные сообщения;
-- Telegram Voice и аудиофайлы;
-- PDF, DOCX, TXT, Markdown, XLSX, CSV;
-- JPG, JPEG, PNG, WEBP;
-- публичные веб-ссылки;
-- пересланные Telegram-сообщения;
-- вопросы по ранее отправленным материалам;
-- сравнение двух материалов;
-- проекты/папки;
-- напоминания;
-- «Напиши за меня» с пользовательским стилем;
-- FREE/PRO и Telegram Stars.
-
-## Главное меню
-
-- 📎 Разобрать
-- ✍️ Написать
-- 🧠 Мои материалы
-- 🔀 Сравнить
-- 📁 Проекты
-- 👑 PRO
-- ⚙️ Настройки
-- ❓ Помощь
-
-Меню необязательно: материал можно просто отправить в чат.
+- Home — hero Clarify, быстрые действия и переход в чат;
+- Materials — поиск, фильтры и история;
+- Material Details — выжимка, AI-действия, Q&A и источники страниц;
+- Projects — рабочие темы и Q&A сразу по нескольким материалам;
+- Compare — сравнение двух материалов;
+- Reminders — создание и управление напоминаниями;
+- Write for me — генерация и переписывание в пользовательском стиле;
+- PRO — Telegram Stars;
+- Profile / Settings — timezone, style, Fast/Smart режим, удаление данных;
+- OWNER — отдельное отображение `OWNER · Unlimited`, без предложения купить PRO.
 
 ## Архитектура
 
 ```text
-main.py
+main.py                         FastAPI + Telegram polling + scheduler
+assets/
+  clarify_banner.webp           оптимизированный фирменный баннер
 app/
-  ai/
-    conversation.py       # multi-material context + URL parsing
-    context.py            # visual follow-ups
-    intent.py             # local intent router
-    provider.py           # OpenAI-compatible text/vision
-    schemas.py
+  webapp/
+    auth.py                     Telegram initData validation
+    api.py                      Mini App REST API
   bot/
-    clarify_web.py        # public web links
-    clarify_context.py    # visual + conversation follow-ups
-    razberi_handlers.py   # router aggregator; legacy filename kept
-    razberi_general.py
-    razberi_materials.py
-    razberi_media.py
-    razberi_payments_admin.py
-  config/settings.py
-  database/
-    models.py             # legacy Pricebot tables
-    razberi_models.py     # additive Clarify tables
-    session.py
-  processors/
-    common.py             # chunks, retrieval, page-marker propagation
-    documents.py
-    stt.py
-    text.py
-  services/
-    core.py
-    page_reader.py
-    reminders.py
-    subscriptions.py
+    clarify_start.py            новый /start + WebApp button
+    clarify_web.py              ссылки
+    clarify_context.py          контекст/vision follow-up
+    razberi_*.py                существующие bot routers
+  ai/                           intent/context/provider
+  database/                     существующая SQLite схема
+  processors/                   docs/STT/chunking
+  services/                     materials/projects/reminders/subscriptions
+webapp/
+  src/
+    App.tsx
+    api.ts
+    styles.css
+  package.json
+  vite.config.ts
 ```
 
-## База данных и совместимость
+## Telegram WebApp auth
 
-На Amvera используется тот же persistent-файл:
+Frontend **не передаёт доверенный `user_id`**. Каждый API-запрос отправляет Telegram `initData`:
 
-```env
-DATABASE_URL=sqlite+aiosqlite:////data/price.db
-DATA_DIR=/data
+```http
+Authorization: tma <Telegram WebApp initData>
 ```
 
-Clarify 0.5 не требует миграции схемы. Существующие пользователи, PRO, платежи, материалы, проекты и legacy Pricebot-таблицы сохраняются.
+Backend проверяет:
 
-## AI
+1. `hash` через HMAC-SHA256 и `BOT_TOKEN`;
+2. `auth_date` и максимальный возраст;
+3. Telegram `user` payload;
+4. после этого находит/создаёт пользователя по проверенному Telegram ID.
 
-Минимально:
+Все запросы материалов/проектов/напоминаний дополнительно фильтруются по `user.id`. Зная чужой material ID, получить его нельзя.
 
-```env
-AI_ENABLED=true
-OPENAI_API_KEY=...
-OPENAI_BASE_URL=https://ваш-openai-compatible-endpoint/v1
-OPENAI_MODEL=...
-FAST_MODEL=...
-SMART_MODEL=...
-VISION_MODEL=...
-```
+Для локального тестирования существует `WEBAPP_DEV_AUTH`, но в production он должен быть `false`.
 
-Fallback:
+## Mini App API
 
-- пустой `FAST_MODEL` → `OPENAI_MODEL`;
-- пустой `SMART_MODEL` → `OPENAI_MODEL`;
-- пустой `VISION_MODEL` → `SMART_MODEL`, затем `OPENAI_MODEL`.
-
-Проверка:
+Основные endpoints:
 
 ```text
-/ai_status
+GET    /api/me
+GET    /api/materials
+GET    /api/materials/{id}
+POST   /api/materials/{id}/ask
+POST   /api/materials/{id}/action
+DELETE /api/materials/{id}
+GET    /api/projects
+POST   /api/projects
+GET    /api/projects/{id}
+POST   /api/projects/{id}/ask
+POST   /api/compare
+GET    /api/reminders
+POST   /api/reminders
+PATCH  /api/reminders/{id}
+DELETE /api/reminders/{id}
+POST   /api/compose
+POST   /api/rewrite
+GET    /api/pro
+POST   /api/pro/invoice
+GET    /api/settings
+PATCH  /api/settings
+DELETE /api/me/data
 ```
 
-## Скорость
+AI Q&A использует тот же OpenAI-compatible provider, quota, retrieval и существующие chunks, что и Telegram-бот. Второго AI pipeline нет.
 
-```env
-FAST_TEXT_CHARS=12000
-CHUNK_PARALLELISM=4
-RETRIEVAL_CHUNK_LIMIT=5
-RECENT_MATERIAL_HOURS=12
-IMAGE_MAX_SIDE=1600
-IMAGE_JPEG_QUALITY=82
-MAX_AI_CONCURRENCY=4
-MAX_DOCUMENT_CONCURRENCY=2
+## PDF sources
+
+PDF хранит маркеры вида:
+
+```text
+[Страница 7]
 ```
 
-Большие документы используют parallel map/reduce. Скриншоты уменьшаются перед vision. Обычные follow-up используют fast-модель, если deep-анализ не требуется.
+При Q&A Mini App извлекает только страницы, реально присутствующие в retrieved-контексте, и показывает их как источники. Номер страницы не придумывается frontend-ом.
 
-## Голосовые
+## OWNER
 
-Local:
+`ADMIN_TELEGRAM_ID` — единственный источник owner-статуса.
 
-```env
-STT_PROVIDER=local
-WHISPER_MODEL=base
-WHISPER_COMPUTE_TYPE=int8
-```
+Owner:
 
-Remote, если OpenAI-compatible endpoint поддерживает transcriptions:
+- автоматически получает internal PRO;
+- не имеет дневного AI-лимита;
+- отображается как `OWNER · Unlimited`;
+- не видит клиентский usage-limit;
+- не получает предложение купить PRO;
+- не создаёт фиктивных Stars-платежей.
 
-```env
-STT_PROVIDER=remote
-STT_REMOTE_MODEL=whisper-1
-STT_REMOTE_TIMEOUT=25
-```
+## Environment
 
-Локальная модель кэшируется в persistent `/data/whisper-cache`.
-
-## FREE / PRO
-
-```env
-FREE_DAILY_AI_LIMIT=10
-PRO_DAILY_AI_LIMIT=150
-FREE_VOICE_DAILY_LIMIT=3
-FREE_VOICE_MAX_SECONDS=120
-FREE_DOCUMENT_MAX_PAGES=10
-PRO_DOCUMENT_MAX_PAGES=200
-PRO_STARS_PRICE=299
-```
-
-PRO не является техническим безлимитом: production-лимиты остаются для защиты сервиса.
-
-## Telegram Stars
-
-`👑 PRO` создаёт invoice в `XTR`. Успешная оплата записывается в БД и активирует PRO. Состояние не хранится только в памяти и переживает restart.
-
-## Безопасность
-
-- `BOT_TOKEN` и API keys только через environment variables;
-- содержимое пользовательских материалов считается untrusted input;
-- команды внутри сайта, документа, картинки или пересланного сообщения не становятся system-инструкциями;
-- публичный PageReader не обходит CAPTCHA/login/access controls;
-- URL проверяется существующим SSRF-safe валидатором;
-- исполняемые файлы не принимаются;
-- временные файлы удаляются;
-- traceback пользователю не показывается;
-- `/delete_my_data` удаляет пользовательские материалы/контекст, но оставляет финансовые записи для корректного учёта.
-
-## Amvera
-
-В репозитории уже есть `Dockerfile` и `amvera.yaml` с persistent mount `/data` и портом `8080`.
-
-Минимальные переменные:
+Минимальный production-набор:
 
 ```env
 BOT_TOKEN=...
@@ -264,32 +152,125 @@ DATABASE_URL=sqlite+aiosqlite:////data/price.db
 DATA_DIR=/data
 PORT=8080
 SERVE_HTTP=true
+WEBAPP_URL=https://YOUR-AMVERA-DOMAIN/app/
+WEBAPP_AUTH_MAX_AGE_SECONDS=86400
+WEBAPP_DEV_AUTH=false
 ```
 
-После deploy:
+Отдельные модели опциональны:
 
-1. `GET /health` → `Clarify 0.5.0`;
-2. `GET /ready` → database/bot/scheduler ready;
-3. `/ai_status` в Telegram;
-4. фото + подпись;
-5. уточнение по фото;
-6. PDF + вопрос;
-7. URL + вопрос;
-8. несколько материалов + follow-up;
-9. PRO/Stars smoke-test.
+```env
+FAST_MODEL=
+SMART_MODEL=
+VISION_MODEL=
+```
 
-## Тесты
+Если frontend и API работают с одного Amvera origin, `WEBAPP_CORS_ORIGINS` оставляется пустым. Если Mini App размещён отдельно, укажите только конкретные HTTPS-origin через запятую — не используйте `*`.
+
+## BotFather / Web App
+
+После первого production deploy:
+
+1. убедитесь, что `https://YOUR-AMVERA-DOMAIN/app/` открывается по HTTPS;
+2. задайте этот адрес в `WEBAPP_URL` на Amvera;
+3. redeploy/restart контейнера;
+4. при необходимости настройте Web App domain/menu button через BotFather;
+5. `/start` автоматически покажет кнопку `🚀 Открыть Clarify`.
+
+Сам backend всё равно проверяет `initData`, поэтому одного доверия домену BotFather недостаточно.
+
+## Local development
+
+Backend:
 
 ```bash
-python -m compileall -q app main.py
-pytest -q
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python main.py
 ```
 
-GitHub Actions выполняет:
+Frontend:
 
-1. установку зависимостей;
-2. compileall;
-3. весь pytest;
-4. production Docker build.
+```bash
+cd webapp
+npm install
+npm run dev
+```
 
-Внешний платный AI в автоматических тестах не вызывается.
+Vite proxy направляет `/api` и `/assets` на `127.0.0.1:8080`.
+
+Для ручной разработки вне Telegram можно временно включить:
+
+```env
+TEST_MODE=true
+WEBAPP_DEV_AUTH=true
+```
+
+и передавать `X-Dev-Telegram-User`. В production `WEBAPP_DEV_AUTH=false`.
+
+## Production Docker / Amvera
+
+Dockerfile multi-stage:
+
+```text
+node:22-alpine
+  -> npm install
+  -> npm run build
+  -> /webapp/dist
+
+python:3.12-slim
+  -> Python dependencies
+  -> bot/backend
+  -> copy webapp/dist
+  -> python main.py
+```
+
+`amvera.yaml` продолжает использовать один контейнер, порт `8080` и persistent mount `/data`.
+
+База остаётся:
+
+```env
+DATABASE_URL=sqlite+aiosqlite:////data/price.db
+```
+
+Новая отдельная база для Mini App не создаётся.
+
+## CI
+
+GitHub Actions обязан пройти:
+
+```text
+Python dependencies
+Mini App dependencies
+Python compile
+pytest
+TypeScript check
+Vite production build
+Docker production build
+```
+
+## Health
+
+```text
+GET /health
+GET /ready
+```
+
+`/ready` дополнительно показывает, присутствует ли production WebApp build.
+
+## Privacy and security
+
+- `BOT_TOKEN` и AI keys только в environment variables;
+- сайты, документы, изображения и сообщения считаются untrusted content;
+- prompt injection внутри материала не становится системной инструкцией;
+- API не принимает client-supplied Telegram ID как identity;
+- URL reader не обходит CAPTCHA/login/access control;
+- `/delete_my_data` и Mini App privacy action удаляют материалы, chunks, проекты, style, reminders и usage согласно текущей логике;
+- финансовые записи сохраняются там, где нужны для корректного Stars-учёта;
+- traceback пользователю не показывается.
+
+## Что осталось от Pricebot
+
+Legacy PRICE-модули намеренно остаются в репозитории для совместимости/истории. Runtime Clarify использует существующую инфраструктуру и базу, но не запускает старый price-tracking UX как основной интерфейс.
