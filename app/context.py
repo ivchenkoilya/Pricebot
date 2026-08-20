@@ -7,6 +7,7 @@ from app.ai.provider import OpenAICompatibleProvider
 from app.config.settings import Settings
 from app.database.session import Database
 from app.processors.stt import build_stt
+from app.services.conversation_context import ConversationContextService
 from app.services.core import (
     ErrorService,
     MaterialService,
@@ -31,6 +32,7 @@ class AppContext:
     users: UserService
     usage: UsageService
     materials: MaterialService
+    conversations: ConversationContextService
     projects: ProjectService
     styles: StyleService
     metrics: MetricService
@@ -48,6 +50,7 @@ class AppContext:
 def build_context(settings: Settings, db: Database, bot) -> AppContext:
     ai = OpenAICompatibleProvider(settings)
     materials = MaterialService(db, settings)
+    conversations = ConversationContextService(db, materials, settings)
     return AppContext(
         settings=settings,
         db=db,
@@ -56,6 +59,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         users=UserService(db, settings),
         usage=UsageService(db, settings),
         materials=materials,
+        conversations=conversations,
         projects=ProjectService(db),
         styles=StyleService(db),
         metrics=MetricService(db),
