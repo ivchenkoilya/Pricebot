@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from PIL import Image
 
 from app.bot.razberi_helpers import esc, get_user
 from app.bot.razberi_keyboards import main_menu
@@ -114,6 +116,17 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _telegram_banner(path: Path) -> BufferedInputFile:
+    """Telegram sendPhoto is much more reliable with JPEG/PNG than WebP."""
+    output = io.BytesIO()
+    with Image.open(path) as image:
+        image.load()
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        image.save(output, format='JPEG', quality=92, optimize=True)
+    return BufferedInputFile(output.getvalue(), filename='clarify-banner.jpg')
+
+
 def build_start_router(ctx) -> Router:
     router = Router(name='clarify-start')
     settings = ctx.settings
@@ -124,12 +137,10 @@ def build_start_router(ctx) -> Router:
         await ctx.metrics.inc('starts', user.id)
         if banner.exists():
             try:
-                await message.answer_photo(FSInputFile(banner))
+                await message.answer_photo(_telegram_banner(banner))
             except Exception as exc:
                 await ctx.errors.record('start-banner', message.from_user.id, 'start_banner', exc)
         await message.answer(START_TEXT, reply_markup=_start_keyboard(settings.webapp_url))
-        # Preserve the existing reply-keyboard tools (projects, compare, compose,
-        # settings, PRO) without overloading the inline start card.
         await message.answer('Быстрые инструменты всегда под рукой 👇', reply_markup=main_menu())
 
     @router.message(CommandStart())
