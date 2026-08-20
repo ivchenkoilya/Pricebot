@@ -29,10 +29,10 @@ export function hasTelegramAuth() {
   return Boolean(tg()?.initData)
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, json = true): Promise<T> {
   const initData = tg()?.initData || ''
   const headers = new Headers(init.headers || {})
-  headers.set('Content-Type', 'application/json')
+  if (json && init.body !== undefined) headers.set('Content-Type', 'application/json')
   if (initData) headers.set('Authorization', `tma ${initData}`)
   const response = await fetch(path, { ...init, headers })
   if (!response.ok) {
@@ -46,6 +46,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new Error(message)
   }
   return response.json() as Promise<T>
+}
+
+export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return request<T>(path, init, true)
+}
+
+export function apiForm<T>(path: string, form: FormData, init: RequestInit = {}): Promise<T> {
+  return request<T>(path, { ...init, method: init.method || 'POST', body: form }, false)
 }
 
 export function haptic(type: 'light' | 'medium' | 'heavy' = 'light') {
