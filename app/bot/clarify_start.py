@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
-from PIL import Image
+from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
 from app.bot.razberi_helpers import esc, get_user
 from app.bot.razberi_keyboards import main_menu
@@ -116,28 +114,17 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _telegram_banner(path: Path) -> BufferedInputFile:
-    """Telegram sendPhoto is much more reliable with JPEG/PNG than WebP."""
-    output = io.BytesIO()
-    with Image.open(path) as image:
-        image.load()
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        image.save(output, format='JPEG', quality=92, optimize=True)
-    return BufferedInputFile(output.getvalue(), filename='clarify-banner.jpg')
-
-
 def build_start_router(ctx) -> Router:
     router = Router(name='clarify-start')
     settings = ctx.settings
-    banner = Path(__file__).resolve().parents[2] / 'assets' / 'clarify_banner.webp'
+    banner = Path(__file__).resolve().parents[2] / 'assets' / 'clarify_banner.jpg'
 
     async def send_start(message: Message) -> None:
         user = await get_user(ctx, message.from_user)
         await ctx.metrics.inc('starts', user.id)
         if banner.exists():
             try:
-                await message.answer_photo(_telegram_banner(banner))
+                await message.answer_photo(FSInputFile(banner, filename='clarify-banner.jpg'))
             except Exception as exc:
                 await ctx.errors.record('start-banner', message.from_user.id, 'start_banner', exc)
         await message.answer(START_TEXT, reply_markup=_start_keyboard(settings.webapp_url))
