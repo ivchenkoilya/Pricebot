@@ -37,10 +37,10 @@ def youtube_video_id(url: str) -> str:
 class FastMediaDownloader(MediaDownloader):
     """Latency-first facade for public media links.
 
-    The menu must never depend on a slow player/format extraction. We use a
-    cheap metadata path first and, if the hosting provider blocks it, return a
-    minimal card immediately. Heavy yt-dlp work is postponed until the user
-    actually asks for video/audio bytes.
+    YouTube frequently rate-limits or blocks datacenter IPs. `MEDIA_PROXY_URL`
+    lets the same proxy be used consistently for oEmbed, subtitles and yt-dlp.
+    Without a proxy the bot still uses the direct fast path and fails quickly
+    instead of keeping the Telegram user waiting for minutes.
     """
 
     def __init__(self, settings):
@@ -48,6 +48,22 @@ class FastMediaDownloader(MediaDownloader):
         self._fast_info_cache: dict[str, tuple[float, MediaInfo]] = {}
         self._direct_transcript_cache: dict[str, tuple[float, str]] = {}
         self._direct_tasks: dict[str, asyncio.Task] = {}
+
+    @property
+    def _proxy(self) -> str | None:
+        value = str(getattr(self.settings, 'media_proxy_url', '') or '').strip()
+        return value or None
+
+    def _common_opts(self) -> dict:
+        opts = super()._common_opts()
+        if self._proxy:
+            opts['proxy'] = self._proxy
+        # Fewer retries/clients are deliberate: the whole UX budget is <30 sec.
+        opts['socket_timeout'] = 5
+        opts['retries'] = 0
+        opts['extractor_retries'] = 0
+        opts['fragment_retries'] = 0
+        return opts
 
     def _fast_cache_get(self, url: str) -> MediaInfo | None:
         item = self._fast_info_cache.get(url)
@@ -87,16 +103,17 @@ class FastMediaDownloader(MediaDownloader):
             return cached
 
         if platform == 'YouTube':
-            # oEmbed avoids YouTube's player/format challenge and is normally
-            # sub-second. If Amvera's IP cannot reach it, do NOT fall back to a
-            # slow yt-dlp inspect here: show the action menu immediately instead.
             try:
                 timeout = min(2.5, max(1.5, float(self.settings.media_inspect_timeout_seconds)))
-                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    timeout=timeout,
+                    follow_redirects=True,
+                    proxy=self._proxy,
+                    headers={'User-Agent': self._UA},
+                ) as client:
                     response = await client.get(
                         'https://www.youtube.com/oembed',
                         params={'url': url, 'format': 'json'},
-                        headers={'User-Agent': self._UA},
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -115,9 +132,6 @@ class FastMediaDownloader(MediaDownloader):
             except Exception:
                 return self._remember_fast_info(url, self._placeholder(url, 'YouTube'))
 
-        # TikTok/Instagram/X metadata is useful, but it must not block the UI.
-        # Only convert timeout/server-challenge style failures to a minimal card;
-        # clear private/deleted errors can still be reported normally.
         try:
             return self._remember_fast_info(url, await super().inspect(url))
         except MediaDownloadError as exc:
@@ -166,16 +180,23 @@ class FastMediaDownloader(MediaDownloader):
                     return text
             except Exception:
                 pass
-
-        # Do not re-enter a long metadata path here. If the direct transcript API
-        # is unavailable, return quickly and let the caller use audio + Whisper.
         return ''
 
-    @staticmethod
-    def _youtube_transcript_sync(video_id: str) -> str:
+    def _youtube_transcript_sync(self, video_id: str) -> str:
         from youtube_transcript_api import YouTubeTranscriptApi
 
-        api = YouTubeTranscriptApi()
+        if self._proxy:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+
+            api = YouTubeTranscriptApi(
+                proxy_config=GenericProxyConfig(
+                    http_url=self._proxy,
+                    https_url=self._proxy,
+                )
+            )
+        else:
+            api = YouTubeTranscriptApi()
+
         transcript = api.fetch(video_id, languages=['ru', 'en'])
         parts: list[str] = []
         for snippet in transcript:
@@ -189,9 +210,9 @@ class FastMediaDownloader(MediaDownloader):
         if platform_for_url(url) != 'YouTube':
             return super()._option_variants(url)
         base = self._common_opts()
+        # Keep only two fast attempts. Four sequential extractor clients were
+        # enough to consume the entire 30-second budget on blocked Amvera IPs.
         return [
-            base | {'extractor_args': {'youtube': {'player_client': ['web_embedded']}}},
-            base | {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
-            base | {'extractor_args': {'youtube': {'player_client': ['tv']}}},
             base | {'extractor_args': {'youtube': {'player_client': ['web_safari']}}},
+            base | {'extractor_args': {'youtube': {'player_client': ['web_embedded']}}},
         ]
