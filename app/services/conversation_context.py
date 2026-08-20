@@ -22,6 +22,7 @@ class ConversationContextService:
         self.materials = materials
         self.settings = settings
         self._history: dict[int, deque[tuple[str, str]]] = defaultdict(lambda: deque(maxlen=10))
+        self._active_material_id: dict[int, int] = {}
 
     async def cutoff(self, user_id: int) -> datetime | None:
         async with self.db.sessions() as session:
@@ -44,11 +45,14 @@ class ConversationContextService:
                 state.updated_at = now
             await session.commit()
         self._history.pop(user_id, None)
+        self._active_material_id.pop(user_id, None)
 
     async def recent_materials(self, user_id: int, limit: int = 10):
         # Fetch a little extra because a clear cutoff can hide older rows.
         items = await self.materials.latest(user_id, max(limit * 3, 12))
         if not items:
+            self._history.pop(user_id, None)
+            self._active_material_id.pop(user_id, None)
             return []
 
         cutoff = await self.cutoff(user_id)
@@ -58,6 +62,18 @@ class ConversationContextService:
             item for item in items
             if getattr(item, 'created_at', None) and item.created_at >= effective_cutoff
         ]
+        if not active:
+            self._history.pop(user_id, None)
+            self._active_material_id.pop(user_id, None)
+            return []
+
+        newest_id = int(active[0].id)
+        previous_id = self._active_material_id.get(user_id)
+        if previous_id is not None and previous_id != newest_id:
+            # A genuinely new material starts a new conversational thread so old
+            # pronouns/answers cannot bleed into the next document or image.
+            self._history.pop(user_id, None)
+        self._active_material_id[user_id] = newest_id
         return active[:limit]
 
     def remember(self, user_id: int, role: str, text: str) -> None:
