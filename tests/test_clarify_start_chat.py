@@ -11,6 +11,7 @@ def test_brand_chat_intents_are_not_new_materials():
     assert classify_text_intent('Привет').name == 'greeting'
     assert classify_text_intent('Кто ты?').name == 'about'
     assert classify_text_intent('Что ты умеешь?').name == 'capabilities'
+    assert classify_text_intent('Список команд').name == 'capabilities'
     assert 'Привет! Я Clarify' in START_TEXT
     assert 'Я Clarify' in ABOUT_TEXT
     assert 'Возможности Clarify' in CAPABILITIES_TEXT
@@ -41,6 +42,7 @@ def test_material_actions_offer_followup_tools():
 
 
 def test_missing_context_shape_is_detectable_without_breaking_legacy_router():
+    assert looks_like_followup('А какой срок?') is True
     assert looks_like_followup('А какой там срок?') is True
     assert looks_like_followup('В какой маске этот человек') is True
     decision = classify_text_intent('В какой маске этот человек', has_recent_material=False)
