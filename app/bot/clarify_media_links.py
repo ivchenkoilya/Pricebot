@@ -123,7 +123,7 @@ async def _ensure_transcript(ctx, user, material, progress: Message):
         audio_path = await ctx.media_downloader.download_audio(url, max_mb=ctx.settings.media_max_file_mb)
         await progress.edit_text('🎤 <b>Распознаю речь…</b>')
         async with ctx.stt_sem:
-            transcript = await ctx.stt.transcribe(str(audio_path), 'ru')
+            transcript = await ctx.media_stt.transcribe(str(audio_path), 'ru')
         transcript = (transcript or '').strip()
         if not transcript:
             raise MediaDownloadError('Не удалось обнаружить речь в этом видео.')
