@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import io
+import base64
 from pathlib import Path
 
-from PIL import Image
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
@@ -31,27 +30,18 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
 
 
 def _telegram_photo_bytes(path: Path) -> bytes:
-    """Convert the branded source asset to a JPEG Telegram sendPhoto accepts reliably."""
-    with Image.open(path) as image:
-        if image.mode not in {'RGB', 'L'}:
-            background = Image.new('RGB', image.size, 'white')
-            if 'A' in image.getbands():
-                background.paste(image, mask=image.getchannel('A'))
-                image = background
-            else:
-                image = image.convert('RGB')
-        elif image.mode == 'L':
-            image = image.convert('RGB')
-
-        output = io.BytesIO()
-        image.save(output, format='JPEG', quality=90, optimize=True)
-        return output.getvalue()
+    """Read the text-safe bundled JPEG payload used by Telegram and the Mini App."""
+    encoded = path.read_text(encoding='ascii').strip()
+    payload = base64.b64decode(encoded, validate=True)
+    if not (payload.startswith(b'\xff\xd8') and payload.endswith(b'\xff\xd9')):
+        raise ValueError('Clarify banner payload is not a JPEG')
+    return payload
 
 
 def build_start_router(ctx) -> Router:
     router = Router(name='clarify-start')
     settings = ctx.settings
-    banner = Path(__file__).resolve().parents[2] / 'assets' / 'clarify_banner.webp'
+    banner = Path(__file__).resolve().parents[2] / 'assets' / 'clarify_banner.jpg.b64'
 
     @router.message(CommandStart())
     async def start(message: Message):
