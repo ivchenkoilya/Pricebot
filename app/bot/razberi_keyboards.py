@@ -18,9 +18,13 @@ def main_menu() -> ReplyKeyboardMarkup:
 def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
         [
-            InlineKeyboardButton(text='✨ Кратко', callback_data=f'mat:{material_id}:summary'),
+            InlineKeyboardButton(text='⚡ Кратко', callback_data=f'mat:{material_id}:summary'),
             InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'),
-        ]
+        ],
+        [
+            InlineKeyboardButton(text='🧠 Простыми словами', callback_data=f'mat:{material_id}:plain'),
+            InlineKeyboardButton(text='✅ Что делать', callback_data=f'mat:{material_id}:tasks'),
+        ],
     ]
     type_low = (material_type or '').lower()
     if type_low in {'pdf', 'docx', 'txt', 'md', 'xlsx', 'csv', 'document'}:
@@ -31,30 +35,35 @@ def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text='📅 Сроки', callback_data=f'mat:{material_id}:dates'),
-                InlineKeyboardButton(text='👶 Просто', callback_data=f'mat:{material_id}:plain'),
+                InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask'),
             ],
         ]
     elif type_low in {'voice', 'audio', 'forwarded'}:
-        rows += [[
-            InlineKeyboardButton(text='🎯 Что от меня хотят?', callback_data=f'mat:{material_id}:wants'),
-            InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply'),
-        ]]
+        rows += [
+            [
+                InlineKeyboardButton(text='🎯 Что от меня хотят?', callback_data=f'mat:{material_id}:wants'),
+                InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply'),
+            ],
+            [
+                InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'),
+                InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask'),
+            ],
+        ]
     else:
         rows += [[
-            InlineKeyboardButton(text='✅ Задачи', callback_data=f'mat:{material_id}:tasks'),
-            InlineKeyboardButton(text='👶 Просто', callback_data=f'mat:{material_id}:plain'),
+            InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'),
+            InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask'),
         ]]
 
     rows += [
         [
-            InlineKeyboardButton(text='❓ Спросить', callback_data=f'mat:{material_id}:ask'),
             InlineKeyboardButton(text='⏰ Напомнить', callback_data=f'mat:{material_id}:remind'),
+            InlineKeyboardButton(text='📁 В проект', callback_data=f'mat:{material_id}:project'),
         ],
         [
-            InlineKeyboardButton(text='📁 В проект', callback_data=f'mat:{material_id}:project'),
             InlineKeyboardButton(text='📄 Исходник', callback_data=f'mat:{material_id}:source'),
+            InlineKeyboardButton(text='🗑 Удалить', callback_data=f'mat:{material_id}:delete'),
         ],
-        [InlineKeyboardButton(text='🗑 Удалить', callback_data=f'mat:{material_id}:delete')],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -107,7 +116,7 @@ def forwarded_actions(material_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text='🎯 Что хотят?', callback_data=f'mat:{material_id}:wants'),
-                InlineKeyboardButton(text='👶 Объяснить', callback_data=f'mat:{material_id}:plain'),
+                InlineKeyboardButton(text='🧠 Простыми словами', callback_data=f'mat:{material_id}:plain'),
             ],
             [
                 InlineKeyboardButton(text='1️⃣ Нейтрально', callback_data=f'fwd:{material_id}:neutral'),
@@ -118,7 +127,7 @@ def forwarded_actions(material_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text='4️⃣ С юмором', callback_data=f'fwd:{material_id}:humor'),
             ],
             [
-                InlineKeyboardButton(text='❓ Спросить', callback_data=f'mat:{material_id}:ask'),
+                InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask'),
                 InlineKeyboardButton(text='📁 В проект', callback_data=f'mat:{material_id}:project'),
             ],
         ]
