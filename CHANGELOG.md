@@ -1,5 +1,53 @@
 # Changelog
 
+## Clarify 0.6.0 — MINI APP
+
+Главная цель релиза — превратить Telegram-бота Clarify в цельный коммерческий продукт с полноценным Mini App, не создавая второй backend или отдельную базу.
+
+### Новый `/start`
+
+- фирменный баннер хранится в `assets/clarify_banner.webp`;
+- короткое позиционирование «Перешли то, на что не хочется тратить время»;
+- WebApp-кнопка `🚀 Открыть Clarify` при настроенном `WEBAPP_URL`;
+- быстрые кнопки материалов, PRO и помощи;
+- owner видит `OWNER · Unlimited`.
+
+### Mini App
+
+Добавлен React/Vite/TypeScript frontend с mobile-first интерфейсом:
+
+- Home;
+- Materials + search/filters;
+- Material Details + AI Q&A/actions/sources;
+- Projects + project Q&A;
+- Compare;
+- Reminders;
+- Write for me;
+- PRO + Telegram Stars;
+- Profile/Settings;
+- OWNER state.
+
+Frontend собирается внутри production Docker и раздаётся тем же FastAPI по `/app/`.
+
+### Telegram security
+
+Mini App API не доверяет client-supplied `user_id`. Backend валидирует Telegram `initData` через HMAC-SHA256 с `BOT_TOKEN`, проверяет `auth_date`, извлекает подписанный user payload и после этого ограничивает все материалы/проекты/напоминания текущим пользователем.
+
+### Backend API
+
+Добавлены same-origin `/api/*` endpoints для профиля, материалов, Q&A/actions, проектов, сравнения, напоминаний, compose/rewrite, PRO invoice, settings и privacy delete. AI-функции используют существующие provider/retrieval/quota/services — второго AI pipeline нет.
+
+### Production
+
+- Docker multi-stage Node 22 → Python 3.12;
+- GitHub Actions проверяет Python compile, pytest, TypeScript, Vite build и Docker build;
+- та же `/data/price.db`;
+- та же Amvera persistence `/data`;
+- `WEBAPP_URL` и auth/CORS настройки вынесены в env;
+- миграция базы не требуется.
+
+---
+
 ## Clarify 0.5.0 — COPILOT
 
 Главная цель релиза — превратить Clarify из обработчика отдельных файлов в помощника, который понимает продолжение разговора и сразу отвечает на задачу пользователя.
