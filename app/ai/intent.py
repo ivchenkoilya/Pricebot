@@ -25,7 +25,8 @@ QUESTION_STARTS = (
 CONTEXT_REFERENCES = (
     'этот ', 'эта ', 'это ', 'эти ', 'этого ', 'этой ', 'этом ', 'эту ',
     'тот ', 'та ', 'то ', 'те ', 'него ', 'неё ', 'нее ', 'нему ', 'ней ',
-    'он ', 'она ', 'они ', 'там ', 'тут ', 'здесь ',
+    'он ', 'она ', 'они ', 'там ', 'тут ', 'здесь ', 'предыдущ', 'последн',
+    'второй', 'вторая', 'втором', 'эта фраз', 'этот пункт', 'это сообщение',
     'на фото', 'на фотке', 'на фотографии', 'на картинке', 'на изображении', 'на скрине', 'на скриншоте',
     'в фото', 'в документе', 'в файле', 'в сообщении', 'в голосовом', 'в тексте',
 )
@@ -41,10 +42,49 @@ INTERROGATIVE_WORDS = re.compile(
     flags=re.IGNORECASE,
 )
 
+GREETING_PHRASES = {
+    'привет', 'приветик', 'здравствуй', 'здравствуйте', 'хай', 'hello', 'hey',
+    'доброе утро', 'добрый день', 'добрый вечер', 'ку', 'салют',
+}
+ABOUT_PHRASES = {
+    'кто ты', 'ты кто', 'расскажи о себе', 'что ты такое', 'что за бот',
+    'зачем ты нужен', 'что такое clarify', 'кто такой clarify',
+}
+CAPABILITY_PHRASES = {
+    'что ты умеешь', 'что умеешь', 'возможности', 'функции', 'чем можешь помочь',
+    'что можешь', 'как ты можешь помочь', 'команды', 'твои возможности',
+}
+HELP_PHRASES = {'помощь', 'помоги разобраться', 'как пользоваться', 'как тобой пользоваться'}
+EXAMPLE_PHRASES = {'примеры', 'покажи примеры', 'примеры запросов', 'что тебе написать'}
+GENERAL_CHAT_PHRASES = {
+    'как дела', 'как ты', 'что нового', 'спасибо', 'спс', 'благодарю', 'понял', 'понятно',
+}
+
+
+def _normalized_phrase(text: str) -> str:
+    value = re.sub(r'\s+', ' ', (text or '').strip().lower())
+    return value.strip(' .,!?:;—-()[]{}«»\"\'')
+
 
 def _has_context_reference(low: str) -> bool:
     padded = f' {low} '
     return any(ref in padded for ref in CONTEXT_REFERENCES)
+
+
+def looks_like_followup(text: str) -> bool:
+    """Detect requests that are meaningless without an earlier material."""
+    value = re.sub(r'\s+', ' ', (text or '').strip())
+    low = value.lower()
+    if not value or len(value) > 240:
+        return False
+    if _has_context_reference(low):
+        return True
+    if low.startswith(('сделай короче', 'ещё короче', 'еще короче', 'объясни второй', 'а дальше')):
+        return True
+    return any(
+        marker in low
+        for marker in ('где это написано', 'что значит эта фраза', 'что имеется в виду', 'что от меня хотят')
+    )
 
 
 def _looks_like_context_question(value: str, low: str, has_recent_material: bool) -> bool:
@@ -53,19 +93,12 @@ def _looks_like_context_question(value: str, low: str, has_recent_material: bool
 
     has_reference = _has_context_reference(low)
 
-    # A fresh how-to request should not get attached to an unrelated photo/file
-    # just because there happens to be a recent material in memory.
-    # «как сделать это короче» still remains contextual because it has «это».
     if low.startswith(STANDALONE_HOWTO_PREFIXES) and not has_reference:
         return False
 
     if '?' in value or low.startswith(QUESTION_STARTS):
         return True
 
-    # Natural Telegram follow-ups often omit a question mark:
-    # «В какой маске этот человек», «Цвет у него какой», «А это где снято».
-    # Require both an interrogative and a reference to the previous material so a
-    # completely new request is not hijacked by context.
     if len(value) <= 220 and INTERROGATIVE_WORDS.search(low) and has_reference:
         return True
 
@@ -73,9 +106,23 @@ def _looks_like_context_question(value: str, low: str, has_recent_material: bool
 
 
 def classify_text_intent(text: str, has_recent_material: bool = False) -> IntentDecision:
-    """Cheap local router. It avoids an extra LLM call for common follow-ups."""
+    """Cheap local router for UI chat, follow-ups and new material."""
     value = re.sub(r'\s+', ' ', (text or '').strip())
     low = value.lower()
+    phrase = _normalized_phrase(value)
+
+    if phrase in GREETING_PHRASES:
+        return IntentDecision('greeting')
+    if phrase in ABOUT_PHRASES:
+        return IntentDecision('about')
+    if phrase in CAPABILITY_PHRASES:
+        return IntentDecision('capabilities')
+    if phrase in HELP_PHRASES:
+        return IntentDecision('help')
+    if phrase in EXAMPLE_PHRASES:
+        return IntentDecision('examples')
+    if phrase in GENERAL_CHAT_PHRASES:
+        return IntentDecision('general_chat')
 
     if low.startswith(('сравни ', 'сравнить ')):
         return IntentDecision('compare', deep=True)
@@ -135,7 +182,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if low in {'короче', 'ещё короче', 'кратко'} or low.startswith(('сделай короче', 'сократи это')):
+    if low in {'короче', 'ещё короче', 'еще короче', 'кратко'} or low.startswith(('сделай короче', 'сократи это')):
         return IntentDecision(
             'shorten',
             'Сделай содержание заметно короче. Верни только самую полезную краткую версию.',
