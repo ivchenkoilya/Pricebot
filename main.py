@@ -10,6 +10,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -106,6 +107,19 @@ async def main() -> None:
 
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     _bot_initialized = True
+    try:
+        await bot.set_my_commands([
+            BotCommand(command='start', description='Начать работу'),
+            BotCommand(command='help', description='Помощь'),
+            BotCommand(command='about', description='О Clarify'),
+            BotCommand(command='examples', description='Примеры запросов'),
+            BotCommand(command='summary', description='Кратко о последнем материале'),
+            BotCommand(command='clear', description='Очистить контекст'),
+        ])
+    except Exception as exc:
+        # Telegram command-menu setup must never prevent the bot from starting.
+        log.warning('Could not configure Telegram command menu: %s', exc)
+
     ctx = build_context(settings, db, bot)
     app.state.ctx = ctx
 
