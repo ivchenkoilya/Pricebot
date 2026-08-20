@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.8.2'
+    version: str = '0.9.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
