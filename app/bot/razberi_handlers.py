@@ -4,6 +4,7 @@ from aiogram import Router
 
 from app.bot.clarify_chat import build_chat_router
 from app.bot.clarify_context import build_context_router
+from app.bot.clarify_media_links import build_media_links_router
 from app.bot.clarify_start import build_start_router
 from app.bot.clarify_web import build_web_router
 from app.bot.razberi_general import build_general_router
@@ -14,12 +15,13 @@ from app.bot.razberi_payments_admin import build_payments_admin_router
 
 def build_router(ctx) -> Router:
     router = Router(name='razberi')
-    # Specific routes first. Start/UI chat stay ahead of the generic text parser,
-    # while links and media keep their dedicated pipelines.
+    # Specific routes first. Video links must be intercepted before the generic
+    # page reader, while regular Telegram media keeps its existing pipeline.
     router.include_router(build_start_router(ctx))
     router.include_router(build_payments_admin_router(ctx))
     router.include_router(build_materials_router(ctx))
     router.include_router(build_media_router(ctx))
+    router.include_router(build_media_links_router(ctx))
     router.include_router(build_web_router(ctx))
     router.include_router(build_chat_router(ctx))
     router.include_router(build_context_router(ctx))
