@@ -14,6 +14,9 @@ def test_brand_chat_intents_are_not_new_materials():
     assert 'Привет! Я Clarify' in START_TEXT
     assert 'Я Clarify' in ABOUT_TEXT
     assert 'Возможности Clarify' in CAPABILITIES_TEXT
+    assert '/start' in CAPABILITIES_TEXT
+    assert '/summary' in CAPABILITIES_TEXT
+    assert '/clear' in CAPABILITIES_TEXT
 
 
 def test_start_keyboard_contains_requested_actions():
