@@ -46,19 +46,10 @@ def build_chat_router(ctx) -> Router:
                 return await message.answer('Отлично. Если что-то останется непонятным — просто спроси.')
             return await message.answer('Всё отлично — готов разбираться в информации 😄 Что посмотрим?')
 
+        # Explicit follow-ups must never become a new material when /clear was used
+        # or when the user has not sent anything yet.
         if not active and looks_like_followup(text):
             return await message.answer(NO_CONTEXT_TEXT)
-
-        # /clear must also protect against the legacy general router consulting an
-        # older saved material. Short requests such as «какие риски?» are treated
-        # as missing-context after a clear, while a genuinely new long text still
-        # passes through for normal analysis.
-        if not active and len(text) <= 240:
-            raw_latest = await ctx.materials.latest(user.id, 1)
-            if raw_latest:
-                stale_decision = classify_text_intent(text, True)
-                if stale_decision.uses_recent_material or looks_like_followup(text):
-                    return await message.answer(NO_CONTEXT_TEXT)
 
         raise SkipHandler
 
