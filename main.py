@@ -41,7 +41,7 @@ if settings.cors_origin_list:
 
 ROOT = Path(__file__).resolve().parent
 WEBAPP_DIST = ROOT / 'webapp' / 'dist'
-BANNER = ROOT / 'assets' / 'clarify_banner.webp'
+BANNER = ROOT / 'assets' / 'clarify_banner.jpg'
 app.mount('/app', StaticFiles(directory=str(WEBAPP_DIST), html=True, check_dir=False), name='webapp')
 
 _runtime_db: Database | None = None
@@ -58,7 +58,7 @@ async def root():
 async def clarify_banner():
     if not BANNER.exists():
         raise HTTPException(404, 'Banner not found')
-    return FileResponse(BANNER, media_type='image/webp', headers={'Cache-Control': 'public, max-age=86400'})
+    return FileResponse(BANNER, media_type='image/jpeg', headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.get('/health')
@@ -117,7 +117,6 @@ async def main() -> None:
             BotCommand(command='clear', description='Очистить контекст'),
         ])
     except Exception as exc:
-        # Telegram command-menu setup must never prevent the bot from starting.
         log.warning('Could not configure Telegram command menu: %s', exc)
 
     ctx = build_context(settings, db, bot)
