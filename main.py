@@ -12,13 +12,14 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.bot.razberi_handlers import build_router
 from app.bot.razberi_middlewares import RateLimitMiddleware
+from app.brand import clarify_banner_jpeg
 from app.config.settings import get_settings
 from app.context import build_context
 from app.database.session import Database
@@ -41,7 +42,6 @@ if settings.cors_origin_list:
 
 ROOT = Path(__file__).resolve().parent
 WEBAPP_DIST = ROOT / 'webapp' / 'dist'
-BANNER = ROOT / 'assets' / 'clarify_banner.jpg'
 app.mount('/app', StaticFiles(directory=str(WEBAPP_DIST), html=True, check_dir=False), name='webapp')
 
 _runtime_db: Database | None = None
@@ -55,10 +55,13 @@ async def root():
 
 
 @app.get('/assets/clarify-banner.webp')
+@app.get('/assets/clarify-banner.jpg')
 async def clarify_banner():
-    if not BANNER.exists():
-        raise HTTPException(404, 'Banner not found')
-    return FileResponse(BANNER, media_type='image/jpeg', headers={'Cache-Control': 'public, max-age=86400'})
+    return Response(
+        content=clarify_banner_jpeg(),
+        media_type='image/jpeg',
+        headers={'Cache-Control': 'public, max-age=86400'},
+    )
 
 
 @app.get('/health')
