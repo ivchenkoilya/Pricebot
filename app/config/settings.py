@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.6.0'
+    version: str = '0.7.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     provider_batch_size: int = 20
     scheduler_tick_seconds: int = 60
     min_drop_percent: float = 3.0
-    alert_cooldown_hours: int = 6
+    alert_cooldown_hours: float = 6
     user_rate_limit_per_minute: int = 20
     global_fetch_concurrency: int = 8
     per_host_fetch_concurrency: int = 2
