@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.8.0'
+    version: str = '0.8.1'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     media_free_max_duration_minutes: int = 10
     media_video_max_height: int = 720
     media_temp_dir: str = ''
+    # Fast-mode targets: never leave the user staring at a spinner for a minute.
+    media_action_timeout_seconds: int = 27
+    media_inspect_timeout_seconds: int = 8
+    media_subtitle_timeout_seconds: int = 5
+    media_fast_subtitles: bool = True
+    media_metadata_cache_seconds: int = 900
 
     # Speech-to-text
     stt_provider: str = 'local'
