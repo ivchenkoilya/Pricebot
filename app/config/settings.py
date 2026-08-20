@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.8.1'
+    version: str = '0.8.2'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -70,14 +70,15 @@ class Settings(BaseSettings):
     media_free_max_duration_minutes: int = 10
     media_video_max_height: int = 720
     media_temp_dir: str = ''
-    # Fast-mode targets: never leave the user staring at a spinner for a minute.
     media_action_timeout_seconds: int = 27
     media_inspect_timeout_seconds: int = 8
     media_subtitle_timeout_seconds: int = 5
     media_fast_subtitles: bool = True
     media_metadata_cache_seconds: int = 900
-    # Only used when a video has no captions. Voice messages keep WHISPER_MODEL.
     media_whisper_model: str = 'tiny'
+    # Optional rotating HTTP(S) proxy. Recommended when YouTube blocks the
+    # datacenter IP of Amvera. Example: http://user:pass@proxy.example:8080
+    media_proxy_url: str = ''
 
     # Speech-to-text
     stt_provider: str = 'local'
@@ -130,7 +131,6 @@ class Settings(BaseSettings):
     @field_validator('webapp_url', mode='before')
     @classmethod
     def normalize_amvera_webapp_url(cls, value):
-        """Fix the old Amvera hostname typo used in the project environment."""
         if not value:
             return value
         url = str(value).strip()
