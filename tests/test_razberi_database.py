@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from app.database.models import User
-from app.services.core import MaterialService, ProjectService, StyleService, UsageService
+from app.services.core import MaterialService, ProjectService, StyleService, UsageService, UserService, is_active_pro
 from app.services.reminders import ReminderService
 
 
@@ -64,6 +65,30 @@ async def test_free_limit_counts_actions(db):
     assert await usage.allowed(user) is True
     await usage.record(user.id, 'fake-model', 'analysis', {'input': 1, 'output': 1})
     assert await usage.allowed(user) is False
+
+
+@pytest.mark.asyncio
+async def test_creator_is_auto_pro_and_bypasses_daily_ai_limit(db):
+    database, settings = db
+    owner_id = 777001
+    settings.admin_telegram_id = owner_id
+    settings.free_daily_ai_limit = 1
+    settings.pro_daily_ai_limit = 1
+
+    telegram_user = SimpleNamespace(
+        id=owner_id,
+        username='owner',
+        first_name='Owner',
+    )
+    user = await UserService(database, settings).upsert(telegram_user)
+    assert user.is_pro is True
+    assert is_active_pro(user) is True
+
+    usage = UsageService(database, settings)
+    for _ in range(3):
+        await usage.record(user.id, 'fake-model', 'analysis', {'input': 1, 'output': 1})
+    assert await usage.ai_count_today(user.id) == 3
+    assert await usage.allowed(user) is True
 
 
 @pytest.mark.asyncio
