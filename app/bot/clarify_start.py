@@ -7,6 +7,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
 from app.bot.razberi_helpers import esc, get_user
+from app.bot.razberi_keyboards import main_menu
 
 
 START_TEXT = (
@@ -120,6 +121,9 @@ def build_start_router(ctx) -> Router:
             except Exception as exc:
                 await ctx.errors.record('start-banner', message.from_user.id, 'start_banner', exc)
         await message.answer(START_TEXT, reply_markup=_start_keyboard(settings.webapp_url))
+        # Preserve the existing reply-keyboard tools (projects, compare, compose,
+        # settings, PRO) without overloading the inline start card.
+        await message.answer('Быстрые инструменты всегда под рукой 👇', reply_markup=main_menu())
 
     @router.message(CommandStart())
     async def start(message: Message):
