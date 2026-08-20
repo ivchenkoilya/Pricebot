@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.7.0'
+    version: str = '0.8.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     free_document_max_pages: int = 10
     pro_document_max_pages: int = 200
     max_file_size_mb: int = 25
+
+    # Public media links: YouTube / Shorts / TikTok (+ best-effort Instagram/X)
+    media_download_enabled: bool = True
+    media_max_file_mb: int = 100
+    media_free_max_file_mb: int = 50
+    media_max_duration_minutes: int = 60
+    media_free_max_duration_minutes: int = 10
+    media_video_max_height: int = 720
+    media_temp_dir: str = ''
 
     # Speech-to-text
     stt_provider: str = 'local'
@@ -170,11 +179,16 @@ class Settings(BaseSettings):
     def ai_uses_custom_endpoint(self) -> bool:
         return bool(self.openai_base_url.strip())
 
+    @property
+    def resolved_media_temp_dir(self) -> str:
+        return self.media_temp_dir or str(Path(self.data_dir) / 'tmp' / 'media')
+
     def ensure_dirs(self) -> None:
         base = Path(self.data_dir)
         base.mkdir(parents=True, exist_ok=True)
         (base / 'tmp').mkdir(parents=True, exist_ok=True)
         Path(self.resolved_whisper_cache_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.resolved_media_temp_dir).mkdir(parents=True, exist_ok=True)
 
     @property
     def resolved_whisper_cache_dir(self) -> str:
