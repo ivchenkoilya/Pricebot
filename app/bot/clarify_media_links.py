@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, Inli
 from app.ai.conversation import extract_urls, text_without_urls
 from app.bot.razberi_helpers import ensure_quota, esc, get_user, send_long_text
 from app.services.core import is_active_pro, is_creator
-from app.services.media_downloader import MediaDownloadError, MediaInfo, is_media_url, media_intent
+from app.services.media_downloader import MediaDownloadError, MediaInfo, is_media_url, media_intent, platform_for_url
 
 
 TRANSCRIPT_MARKER = '\n\nТранскрипт:\n'
@@ -53,14 +53,45 @@ def _source_url(material) -> str:
     return ''
 
 
+def _material_info(material) -> MediaInfo:
+    """Rebuild lightweight metadata from the material without calling YouTube again."""
+    values: dict[str, str] = {}
+    for line in (material.extracted_text or '').splitlines():
+        if ': ' in line:
+            key, value = line.split(': ', 1)
+            values[key.strip()] = value.strip()
+    url = values.get('Источник видео') or _source_url(material)
+    duration = 0
+    duration_text = values.get('Длительность', '')
+    try:
+        parts = [int(part) for part in duration_text.split(':')]
+        if len(parts) == 2:
+            duration = parts[0] * 60 + parts[1]
+        elif len(parts) == 3:
+            duration = parts[0] * 3600 + parts[1] * 60 + parts[2]
+    except (TypeError, ValueError):
+        duration = 0
+    platform = values.get('Платформа') or platform_for_url(url) or 'Видео'
+    return MediaInfo(
+        url=url,
+        platform=platform,
+        title=values.get('Название') or material.title or f'{platform} видео',
+        author='' if values.get('Автор') in {None, '', 'не указан'} else values.get('Автор', ''),
+        duration=duration,
+        filesize=None,
+        thumbnail=None,
+    )
+
+
 def _info_card(info: MediaInfo) -> str:
     lines = [
         '🎬 <b>Нашёл видео</b>',
         '',
         f'<b>{esc(info.title)}</b>',
         f'📺 {esc(info.platform)}',
-        f'⏱ {info.duration_text}',
     ]
+    if info.duration > 0:
+        lines.append(f'⏱ {info.duration_text}')
     if info.author:
         lines.append(f'👤 {esc(info.author)}')
     if info.size_mb is not None:
@@ -94,16 +125,16 @@ async def _ensure_transcript(ctx, user, material, progress: Message):
     if cached:
         return cached
 
-    info = await ctx.media_downloader.inspect(url)
+    # Never re-inspect YouTube here. The old code spent most of the 30-second
+    # budget doing a second player extraction before it even tried captions.
+    info = _material_info(material)
     _, max_minutes = _plan_limits(user, ctx.settings)
-    if max_minutes is not None and info.duration > max_minutes * 60:
+    if max_minutes is not None and info.duration > 0 and info.duration > max_minutes * 60:
         raise MediaDownloadError(
             f'На твоём тарифе разбор видео доступен до {max_minutes} мин. Более длинные видео доступны в PRO.'
         )
 
-    # Fast path: YouTube captions / auto-captions. This skips both media download
-    # and local Whisper and is normally the difference between seconds and minutes.
-    await progress.edit_text('⚡ <b>Ищу готовые субтитры…</b>')
+    await progress.edit_text('⚡ <b>Получаю текст видео…</b>')
     transcript = await ctx.media_downloader.fast_transcript(url)
     if transcript:
         stored = _metadata_text(info) + TRANSCRIPT_MARKER + transcript
@@ -112,12 +143,14 @@ async def _ensure_transcript(ctx, user, material, progress: Message):
             'video',
             info.title,
             stored,
-            f'Транскрипт видео готов · {info.platform} · {info.duration_text}',
+            f'Транскрипт видео готов · {info.platform}',
         )
         await ctx.metrics.inc('media_transcribed_from_subtitles', user.id)
         return transcript_material
 
-    await progress.edit_text('🎧 <b>Субтитров нет — получаю аудио…</b>')
+    # No public captions: only now touch the media stream and use the tiny STT
+    # fallback. This is intentionally the second path, not the first one.
+    await progress.edit_text('🎧 <b>Субтитров нет — быстро получаю аудио…</b>')
     audio_path = None
     try:
         audio_path = await ctx.media_downloader.download_audio(url, max_mb=ctx.settings.media_max_file_mb)
@@ -133,7 +166,7 @@ async def _ensure_transcript(ctx, user, material, progress: Message):
             'video',
             info.title,
             stored,
-            f'Транскрипт видео готов · {info.platform} · {info.duration_text}',
+            f'Транскрипт видео готов · {info.platform}',
         )
         await ctx.metrics.inc('media_transcribed', user.id)
         return transcript_material
@@ -155,26 +188,40 @@ def build_media_links_router(ctx) -> Router:
                 'video_link',
                 info.title,
                 _metadata_text(info),
-                f'{info.platform} · {info.duration_text}',
+                f'{info.platform} · {info.duration_text if info.duration else "видео"}',
             )
             await ctx.metrics.inc('media_links_opened', material.user_id)
             await progress.edit_text(_info_card(info), reply_markup=media_actions(material.id))
-            # Warm the cheapest path in the background while the user is deciding
-            # which button to press. Only public caption metadata is prefetched.
             ctx.media_downloader.prefetch_transcript(info.url)
             return material, progress
         except MediaDownloadError as exc:
-            await progress.edit_text(f'⚠️ {esc(str(exc))}')
-            return None, progress
+            # A media link should still remain usable even if metadata lookup is
+            # blocked from the hosting IP. Make a generic card instead of dying.
+            platform = platform_for_url(url) or 'Видео'
+            info = MediaInfo(url=url, platform=platform, title=f'{platform} видео', author='', duration=0, filesize=None)
+            user = await get_user(ctx, message.from_user)
+            material = await ctx.materials.create(
+                user.id,
+                'video_link',
+                info.title,
+                _metadata_text(info),
+                f'{platform} видео',
+            )
+            await ctx.metrics.inc('media_links_fallback', user.id)
+            await progress.edit_text(_info_card(info), reply_markup=media_actions(material.id))
+            ctx.media_downloader.prefetch_transcript(url)
+            return material, progress
 
     async def run_action(message: Message, user, material, action: str, progress: Message | None = None):
         url = _source_url(material)
         if not url:
             return await message.answer('⚠️ Не удалось восстановить ссылку видео. Пришли её ещё раз.')
         max_mb, max_minutes = _plan_limits(user, settings)
+        info = _material_info(material)
         try:
-            info = await ctx.media_downloader.inspect(url)
-            if max_minutes is not None and info.duration > max_minutes * 60 and action in {'video', 'audio', 'transcribe', 'summary', 'main', 'plain'}:
+            # Do not call inspect() again here. It caused every button press to
+            # spend seconds re-querying YouTube before doing the requested job.
+            if max_minutes is not None and info.duration > 0 and info.duration > max_minutes * 60:
                 return await message.answer(
                     f'⚠️ На твоём тарифе видео доступно до {max_minutes} мин. Для более длинных роликов нужен PRO.'
                 )
@@ -183,10 +230,10 @@ def build_media_links_router(ctx) -> Router:
                 status = progress or await message.answer('⬇️ <b>Загружаю видео…</b>')
                 path = None
                 try:
-                    await status.edit_text('⬇️ <b>Загружаю видео…</b>\nЦель — уложиться примерно в 30 секунд.')
+                    await status.edit_text('⬇️ <b>Загружаю видео…</b>\nПробую быстрый MP4-поток без лишних проверок.')
                     path = await ctx.media_downloader.download_video(url, max_mb=max_mb, max_height=settings.media_video_max_height)
                     filename = ctx.media_downloader.safe_filename(info.title, path.suffix or '.mp4')
-                    caption = f'✅ <b>{esc(info.title)}</b>\n📺 {esc(info.platform)} · ⏱ {info.duration_text}'
+                    caption = f'✅ <b>{esc(info.title)}</b>\n📺 {esc(info.platform)}'
                     try:
                         await message.answer_video(FSInputFile(path, filename=filename), caption=caption, supports_streaming=True)
                     except Exception:
@@ -203,7 +250,7 @@ def build_media_links_router(ctx) -> Router:
                 try:
                     path = await ctx.media_downloader.download_audio(url, max_mb=max_mb)
                     filename = ctx.media_downloader.safe_filename(info.title, '.mp3')
-                    caption = f'✅ <b>{esc(info.title)}</b>\n🎧 {esc(info.platform)} · ⏱ {info.duration_text}'
+                    caption = f'✅ <b>{esc(info.title)}</b>\n🎧 {esc(info.platform)}'
                     try:
                         await message.answer_audio(FSInputFile(path, filename=filename), caption=caption, title=info.title, performer=info.author or None)
                     except Exception:
@@ -268,9 +315,9 @@ def build_media_links_router(ctx) -> Router:
             )
         except TimeoutError:
             await progress.edit_text(
-                '⏱ <b>Остановил ожидание через 30 секунд.</b>\n\n'
-                'Clarify не будет висеть минутами. Для анализа попробуй «Расшифровать» или «Краткий пересказ» — '
-                'если у ролика есть субтитры, они обычно работают значительно быстрее.'
+                '⏱ <b>Не удалось закончить за 30 секунд.</b>\n\n'
+                'Если это скачивание, YouTube не отдал файл серверу достаточно быстро. '
+                'Для анализа ролика используй «Расшифровать» или «Краткий пересказ» — они идут через быстрый текстовый путь.'
             )
         finally:
             _ACTIVE_MEDIA_JOBS.discard(key)
