@@ -227,21 +227,17 @@ def build_media_links_router(ctx) -> Router:
                 )
 
             if action == 'video':
-                status = progress or await message.answer('⬇️ <b>Загружаю видео…</b>')
-                path = None
-                try:
-                    await status.edit_text('⬇️ <b>Загружаю видео…</b>\nПробую быстрый MP4-поток без лишних проверок.')
-                    path = await ctx.media_downloader.download_video(url, max_mb=max_mb, max_height=settings.media_video_max_height)
-                    filename = ctx.media_downloader.safe_filename(info.title, path.suffix or '.mp4')
-                    caption = f'✅ <b>{esc(info.title)}</b>\n📺 {esc(info.platform)}'
-                    try:
-                        await message.answer_video(FSInputFile(path, filename=filename), caption=caption, supports_streaming=True)
-                    except Exception:
-                        await message.answer_document(FSInputFile(path, filename=filename), caption=caption)
-                    await status.edit_text('✅ Видео отправлено.')
-                    await ctx.metrics.inc('media_video_downloaded', user.id)
-                finally:
-                    ctx.media_downloader.cleanup(path)
+                status = progress or await message.answer('🚧 <b>Скачивание видео появится позже</b>')
+                await status.edit_text(
+                    '🚧 <b>Скачивание видео появится позже</b>\n\n'
+                    'Мы ещё дорабатываем эту функцию, чтобы она работала быстро и стабильно.\n\n'
+                    '<b>Пока уже доступны:</b>\n'
+                    '🎧 Скачать аудио\n'
+                    '📝 Расшифровать\n'
+                    '✨ Краткий пересказ\n'
+                    '📌 Главное\n'
+                    '🧠 Объяснить'
+                )
                 return
 
             if action == 'audio':
