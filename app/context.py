@@ -44,6 +44,7 @@ class AppContext:
     page_reader: PageReader
     media_downloader: MediaDownloader
     stt: object
+    media_stt: object
     ai_sem: asyncio.Semaphore
     stt_sem: asyncio.Semaphore
     doc_sem: asyncio.Semaphore
@@ -53,6 +54,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
     ai = OpenAICompatibleProvider(settings)
     materials = MaterialService(db, settings)
     conversations = ConversationContextService(db, materials, settings)
+    media_stt_settings = settings.model_copy(update={'whisper_model': settings.media_whisper_model})
     return AppContext(
         settings=settings,
         db=db,
@@ -72,6 +74,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         page_reader=PageReader(settings),
         media_downloader=MediaDownloader(settings),
         stt=build_stt(settings, ai),
+        media_stt=build_stt(media_stt_settings, ai),
         ai_sem=asyncio.Semaphore(settings.max_ai_concurrency),
         stt_sem=asyncio.Semaphore(settings.max_stt_concurrency),
         doc_sem=asyncio.Semaphore(settings.max_document_concurrency),
