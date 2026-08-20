@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     provider_batch_size: int = 20
     scheduler_tick_seconds: int = 60
     min_drop_percent: float = 3.0
-    alert_cooldown_hours: float = 6
+    alert_cooldown_hours: int = 6
     user_rate_limit_per_minute: int = 20
     global_fetch_concurrency: int = 8
     per_host_fetch_concurrency: int = 2
