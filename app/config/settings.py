@@ -110,6 +110,17 @@ class Settings(BaseSettings):
             return None
         return int(value)
 
+    @field_validator('webapp_url', mode='before')
+    @classmethod
+    def normalize_amvera_webapp_url(cls, value):
+        """Fix the old Amvera hostname typo used in the project environment."""
+        if not value:
+            return value
+        url = str(value).strip()
+        url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+        url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+        return url
+
     @field_validator('database_url', mode='before')
     @classmethod
     def default_database(cls, value):
