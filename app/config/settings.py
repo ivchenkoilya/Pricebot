@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.6.0'
+    version: str = '0.6.1'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -79,97 +79,82 @@ class Settings(BaseSettings):
     material_ttl_days: int = 30
     max_material_chars: int = 400_000
 
-    # Legacy PRICE settings retained so old modules/tests stay import-compatible.
-    check_interval_free_hours: int = 12
-    check_interval_pro_hours: int = 2
-    free_watch_limit: int = 3
-    pro_watch_limit: int = 50
+    # Legacy PRICE configuration kept intentionally so old modules/tests remain import-compatible.
+    check_interval_free_hours: int = 24
+    check_interval_pro_hours: int = 4
+    free_product_limit: int = 3
+    pro_product_limit: int = 50
+    price_drop_threshold_percent: float = 1.0
+    alert_cooldown_hours: int = 8
     request_timeout: float = 20.0
-    max_provider_failures: int = 5
-    provider_batch_size: int = 20
-    scheduler_tick_seconds: int = 60
-    min_drop_percent: float = 3.0
-    alert_cooldown_hours: int = 6
-    user_rate_limit_per_minute: int = 20
-    global_fetch_concurrency: int = 8
-    per_host_fetch_concurrency: int = 2
-    min_host_request_interval_seconds: float = 1.0
-    max_response_bytes: int = 2_000_000
-    provider_user_agent: str = 'PRICE/0.1 (+Telegram price tracker; respectful fetcher)'
-    disabled_providers: str = ''
-    page_reader_jina_enabled: bool = True
-    jina_reader_api_key: str = ''
-    page_reader_timeout: float = 25.0
-    page_reader_min_chars: int = 120
-    page_reader_max_chars: int = 24_000
+    max_retries: int = 2
+    user_agent: str = 'Mozilla/5.0 (compatible; ClarifyBot/0.6; +https://t.me/)'
 
-    @field_validator('admin_telegram_id', mode='before')
+    @field_validator('stt_provider')
     @classmethod
-    def empty_admin_to_none(cls, value):
-        if value in ('', None, 0, '0'):
-            return None
-        return int(value)
+    def validate_stt_provider(cls, value: str) -> str:
+        clean = (value or 'local').strip().lower()
+        if clean not in {'local', 'remote'}:
+            raise ValueError('STT_PROVIDER must be local or remote')
+        return clean
 
-    @field_validator('database_url', mode='before')
-    @classmethod
-    def default_database(cls, value):
-        if value:
-            return value
-        data_path = Path('/data')
-        if data_path.exists() and data_path.is_dir():
-            return 'sqlite+aiosqlite:////data/price.db'
-        Path('./data').mkdir(parents=True, exist_ok=True)
-        return 'sqlite+aiosqlite:///./data/price.db'
-
-    @field_validator('data_dir', mode='before')
-    @classmethod
-    def default_data_dir(cls, value):
-        if value:
-            return str(value)
-        data_path = Path('/data')
-        if data_path.exists() and data_path.is_dir():
-            return '/data'
-        return './data'
+    @property
+    def ai_available(self) -> bool:
+        return bool(self.ai_enabled and self.openai_api_key and self.openai_model)
 
     @property
     def fast(self) -> str:
-        return self.fast_model.strip() or self.openai_model.strip()
+        return self.fast_model.strip() or self.openai_model
 
     @property
     def smart(self) -> str:
-        return self.smart_model.strip() or self.openai_model.strip()
+        return self.smart_model.strip() or self.openai_model
 
     @property
     def vision(self) -> str:
-        return self.vision_model.strip() or self.smart_model.strip() or self.openai_model.strip()
+        return self.vision_model.strip() or self.smart
 
     @property
-    def disabled_provider_set(self) -> set[str]:
-        return {item.strip().lower() for item in self.disabled_providers.split(',') if item.strip()}
+    def database_path(self) -> Path | None:
+        prefix = 'sqlite+aiosqlite:///'
+        if not self.database_url.startswith(prefix):
+            return None
+        return Path(self.database_url[len(prefix):])
+
+    @property
+    def data_path(self) -> Path:
+        if self.data_dir:
+            return Path(self.data_dir)
+        if Path('/data').exists():
+            return Path('/data')
+        return Path('./data')
+
+    @property
+    def temp_dir(self) -> Path:
+        return self.data_path / 'tmp'
+
+    @property
+    def whisper_cache_path(self) -> Path:
+        if self.whisper_cache_dir:
+            return Path(self.whisper_cache_dir)
+        return self.data_path / 'whisper-cache'
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip().rstrip('/') for item in self.webapp_cors_origins.split(',') if item.strip()]
 
-    @property
-    def ai_available(self) -> bool:
-        return bool(self.ai_enabled and self.openai_api_key.strip() and self.openai_model.strip())
-
-    @property
-    def ai_uses_custom_endpoint(self) -> bool:
-        return bool(self.openai_base_url.strip())
-
     def ensure_dirs(self) -> None:
-        base = Path(self.data_dir)
-        base.mkdir(parents=True, exist_ok=True)
-        (base / 'tmp').mkdir(parents=True, exist_ok=True)
-        Path(self.resolved_whisper_cache_dir).mkdir(parents=True, exist_ok=True)
-
-    @property
-    def resolved_whisper_cache_dir(self) -> str:
-        return self.whisper_cache_dir or str(Path(self.data_dir) / 'whisper-cache')
+        self.data_path.mkdir(parents=True, exist_ok=True)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.whisper_cache_path.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    if not settings.database_url:
+        if Path('/data').exists():
+            settings.database_url = 'sqlite+aiosqlite:////data/price.db'
+        else:
+            settings.database_url = 'sqlite+aiosqlite:///./data/price.db'
+    return settings
