@@ -32,7 +32,7 @@ def build_context_router(ctx) -> Router:
             raise SkipHandler
 
         user = await get_user(ctx, message.from_user)
-        items = await ctx.materials.latest(user.id, 8)
+        items = await ctx.conversations.recent_materials(user.id, 8)
         material = select_recent_image(items, text, settings.recent_material_hours)
         if material is None or not material.telegram_file_id:
             raise SkipHandler
@@ -40,7 +40,7 @@ def build_context_router(ctx) -> Router:
         if not await ensure_quota(ctx, message, user):
             return
 
-        progress = await message.answer('🔎 <b>Clarify рассматривает исходное фото…</b>')
+        progress = await message.answer('🖼 <b>Изучаю исходное изображение…</b>')
         request_id = uuid.uuid4().hex
         try:
             buffer = io.BytesIO()
@@ -64,6 +64,8 @@ def build_context_router(ctx) -> Router:
                 )
             await ctx.usage.record(user.id, settings.vision, 'image_followup', usage)
             await ctx.metrics.inc('image_followups', user.id)
+            ctx.conversations.remember(user.id, 'user', text)
+            ctx.conversations.remember(user.id, 'assistant', answer)
             await progress.edit_text('🖼 <b>Clarify</b>\n\n' + esc(answer))
         except Exception as exc:
             await ctx.errors.record(request_id, message.from_user.id, 'image_followup', exc)
@@ -82,7 +84,7 @@ def build_context_router(ctx) -> Router:
             raise SkipHandler
 
         user = await get_user(ctx, message.from_user)
-        items = await ctx.materials.latest(user.id, 10)
+        items = await ctx.conversations.recent_materials(user.id, 10)
         if not items:
             raise SkipHandler
 
@@ -101,7 +103,7 @@ def build_context_router(ctx) -> Router:
         if not await ensure_quota(ctx, message, user):
             return
 
-        progress = await message.answer('🧠 <b>Clarify держит контекст…</b>')
+        progress = await message.answer('🧠 <b>Уточняю по последнему материалу…</b>')
         request_id = uuid.uuid4().hex
         try:
             contexts: list[str] = []
@@ -121,6 +123,12 @@ def build_context_router(ctx) -> Router:
                 raise SkipHandler
 
             task = decision.prompt or text
+            recent_dialogue = ctx.conversations.history_text(user.id, limit=6)
+            dialogue_note = (
+                '\n\nНедавний диалог (используй только для разрешения коротких ссылок и продолжения мысли):\n'
+                + recent_dialogue
+                if recent_dialogue else ''
+            )
             prompt = (
                 f'{task}\n\n'
                 'Это продолжение диалога. Разрешай слова «он», «она», «это», «там», «второй», «предыдущий» '
@@ -128,12 +136,15 @@ def build_context_router(ctx) -> Router:
                 'Если используешь факт из PDF и рядом есть маркер [Страница N], укажи страницу. '
                 'Если использованы несколько материалов, в конце кратко назови, из какого материала взят каждый спорный факт. '
                 'Если данных недостаточно, так и скажи — не додумывай.'
+                f'{dialogue_note}'
             )
             model = settings.smart if decision.deep or len(contexts) > 1 else settings.fast
             async with ctx.ai_sem:
                 answer, usage = await ctx.ai.ask(prompt, '\n\n---\n\n'.join(contexts), model=model)
             await ctx.usage.record(user.id, model, f'conversation_{decision.name}', usage)
             await ctx.metrics.inc('context_followups', user.id)
+            ctx.conversations.remember(user.id, 'user', text)
+            ctx.conversations.remember(user.id, 'assistant', answer)
             await progress.edit_text(esc(answer))
         except SkipHandler:
             try:
