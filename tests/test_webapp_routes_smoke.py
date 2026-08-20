@@ -4,7 +4,7 @@ import main
 
 
 def test_webapp_routes_are_registered():
-    paths = {route.path for route in main.app.routes}
+    paths = {path for route in main.app.routes if (path := getattr(route, 'path', None))}
     assert '/api/me' in paths
     assert '/api/materials' in paths
     assert '/api/compare' in paths
