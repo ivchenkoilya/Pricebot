@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     media_subtitle_timeout_seconds: int = 5
     media_fast_subtitles: bool = True
     media_metadata_cache_seconds: int = 900
+    # Only used when a video has no captions. Voice messages keep WHISPER_MODEL.
+    media_whisper_model: str = 'tiny'
 
     # Speech-to-text
     stt_provider: str = 'local'
