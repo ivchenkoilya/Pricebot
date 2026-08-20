@@ -52,7 +52,8 @@ ABOUT_PHRASES = {
 }
 CAPABILITY_PHRASES = {
     'что ты умеешь', 'что умеешь', 'возможности', 'функции', 'чем можешь помочь',
-    'что можешь', 'как ты можешь помочь', 'команды', 'твои возможности',
+    'что можешь', 'что можешь делать', 'как ты можешь помочь', 'команды', 'список команд',
+    'покажи команды', 'твои возможности',
 }
 HELP_PHRASES = {'помощь', 'помоги разобраться', 'как пользоваться', 'как тобой пользоваться'}
 EXAMPLE_PHRASES = {'примеры', 'покажи примеры', 'примеры запросов', 'что тебе написать'}
@@ -72,12 +73,17 @@ def _has_context_reference(low: str) -> bool:
 
 
 def looks_like_followup(text: str) -> bool:
-    """Detect requests that are meaningless without an earlier material."""
+    """Detect short requests that clearly refer to an earlier material."""
     value = re.sub(r'\s+', ' ', (text or '').strip())
     low = value.lower()
     if not value or len(value) > 240:
         return False
     if _has_context_reference(low):
+        return True
+    # Russian conversational follow-ups very often start with «а»: «А какой срок?»,
+    # «А почему?», «А кто это?». This signal is intentionally stronger than a
+    # generic question so standalone how-to requests stay independent.
+    if low.startswith('а ') and (INTERROGATIVE_WORDS.search(low) or '?' in value):
         return True
     if low.startswith(('сделай короче', 'ещё короче', 'еще короче', 'объясни второй', 'а дальше')):
         return True
