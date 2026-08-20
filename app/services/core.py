@@ -20,12 +20,20 @@ from app.database.razberi_models import (
 from app.processors.common import chunk_text, retrieve_chunks
 
 
+OWNER_PRO_UNTIL = datetime(2099, 12, 31, 23, 59, 59)
+
+
 def now_utc() -> datetime:
     return datetime.utcnow()
 
 
 def is_active_pro(user: User) -> bool:
     return bool(user.is_pro and user.pro_until and user.pro_until > now_utc())
+
+
+def is_creator(user: User, settings) -> bool:
+    """True for the Telegram account configured as ADMIN_TELEGRAM_ID."""
+    return bool(settings.admin_telegram_id and user.telegram_id == settings.admin_telegram_id)
 
 
 class UserService:
@@ -52,6 +60,14 @@ class UserService:
                 user.last_active_at = now_utc()
                 if user.is_pro and user.pro_until and user.pro_until <= now_utc():
                     user.is_pro = False
+
+            # The bot owner should never hit customer-facing FREE/PRO limits.
+            # ADMIN_TELEGRAM_ID is the single source of truth: no hardcoded ID and
+            # no payment/subscription record is created for this internal access.
+            if self.settings.admin_telegram_id and telegram_user.id == self.settings.admin_telegram_id:
+                user.is_pro = True
+                user.pro_until = OWNER_PRO_UNTIL
+
             await session.commit()
             await session.refresh(user)
             return user
@@ -102,6 +118,8 @@ class UsageService:
 
     async def allowed(self, user: User, feature: str = 'ai') -> bool:
         del feature
+        if is_creator(user, self.settings):
+            return True
         limit = self.settings.pro_daily_ai_limit if is_active_pro(user) else self.settings.free_daily_ai_limit
         return (await self.ai_count_today(user.id)) < limit
 
