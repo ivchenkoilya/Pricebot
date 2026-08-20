@@ -15,6 +15,34 @@ GREETING_TEXT = (
 )
 
 
+async def _answer_static(message: Message, intent: str) -> bool:
+    if intent == 'greeting':
+        await message.answer(GREETING_TEXT)
+        return True
+    if intent == 'about':
+        await message.answer(ABOUT_TEXT)
+        return True
+    if intent == 'capabilities':
+        await message.answer(CAPABILITIES_TEXT)
+        return True
+    if intent == 'help':
+        await message.answer(HELP_TEXT)
+        return True
+    if intent == 'examples':
+        await message.answer(EXAMPLES_TEXT)
+        return True
+    if intent == 'general_chat':
+        low = (message.text or '').strip().lower()
+        if any(word in low for word in ('спасибо', 'спс', 'благодарю')):
+            await message.answer('Пожалуйста 🙂 Если есть ещё материал — отправляй, разберём.')
+        elif low in {'понял', 'понятно'}:
+            await message.answer('Отлично. Если что-то останется непонятным — просто спроси.')
+        else:
+            await message.answer('Всё отлично — готов разбираться в информации 😄 Что посмотрим?')
+        return True
+    return False
+
+
 def build_chat_router(ctx) -> Router:
     router = Router(name='clarify-chat')
 
@@ -24,27 +52,14 @@ def build_chat_router(ctx) -> Router:
         if not text or text.startswith('/'):
             raise SkipHandler
 
+        # Brand/help/small-talk intents are intentionally answered before any DB
+        # or AI work so «Привет», «Кто ты?» and «Что умеешь?» feel instant.
+        static_decision = classify_text_intent(text, False)
+        if await _answer_static(message, static_decision.name):
+            return
+
         user = await get_user(ctx, message.from_user)
         active = await ctx.conversations.recent_materials(user.id, 3)
-        decision = classify_text_intent(text, bool(active))
-
-        if decision.name == 'greeting':
-            return await message.answer(GREETING_TEXT)
-        if decision.name == 'about':
-            return await message.answer(ABOUT_TEXT)
-        if decision.name == 'capabilities':
-            return await message.answer(CAPABILITIES_TEXT)
-        if decision.name == 'help':
-            return await message.answer(HELP_TEXT)
-        if decision.name == 'examples':
-            return await message.answer(EXAMPLES_TEXT)
-        if decision.name == 'general_chat':
-            low = text.lower()
-            if any(word in low for word in ('спасибо', 'спс', 'благодарю')):
-                return await message.answer('Пожалуйста 🙂 Если есть ещё материал — отправляй, разберём.')
-            if low in {'понял', 'понятно'}:
-                return await message.answer('Отлично. Если что-то останется непонятным — просто спроси.')
-            return await message.answer('Всё отлично — готов разбираться в информации 😄 Что посмотрим?')
 
         # Explicit follow-ups must never become a new material when /clear was used
         # or when the user has not sent anything yet.
