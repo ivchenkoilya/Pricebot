@@ -1,0 +1,1 @@
+Clarify 0.5.1: owner account configured by ADMIN_TELEGRAM_ID automatically receives internal PRO access and bypasses daily AI quotas. No Stars payment/subscription record is created. Operational file-size and PRO document-page ceilings remain as safety limits.
