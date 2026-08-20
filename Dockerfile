@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libgomp1 \
+    && apt-get install -y --no-install-recommends ffmpeg libgomp1 nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,6 +20,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 COPY --from=webapp-build /webapp/dist /app/webapp/dist
-RUN mkdir -p /data/tmp /data/whisper-cache
+RUN mkdir -p /data/tmp /data/tmp/media /data/whisper-cache
 
 CMD ["python", "main.py"]
