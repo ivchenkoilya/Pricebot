@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.bot.razberi_handlers import build_router
@@ -40,7 +41,7 @@ if settings.cors_origin_list:
 
 ROOT = Path(__file__).resolve().parent
 WEBAPP_DIST = ROOT / 'webapp' / 'dist'
-BANNER = ROOT / 'assets' / 'clarify_banner.webp'
+BANNER = ROOT / 'assets' / 'clarify_banner.jpg.b64'
 app.mount('/app', StaticFiles(directory=str(WEBAPP_DIST), html=True, check_dir=False), name='webapp')
 
 _runtime_db: Database | None = None
@@ -57,7 +58,13 @@ async def root():
 async def clarify_banner():
     if not BANNER.exists():
         raise HTTPException(404, 'Banner not found')
-    return FileResponse(BANNER, media_type='image/webp', headers={'Cache-Control': 'public, max-age=86400'})
+    try:
+        payload = base64.b64decode(BANNER.read_text(encoding='ascii').strip(), validate=True)
+    except Exception as exc:
+        raise HTTPException(500, 'Banner payload is invalid') from exc
+    if not (payload.startswith(b'\xff\xd8') and payload.endswith(b'\xff\xd9')):
+        raise HTTPException(500, 'Banner payload is invalid')
+    return Response(content=payload, media_type='image/jpeg', headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.get('/health')

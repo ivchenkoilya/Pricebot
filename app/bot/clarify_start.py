@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
 from app.bot.razberi_helpers import get_user
 from app.bot.razberi_keyboards import main_menu, materials_list, pro_button
@@ -28,15 +29,29 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _telegram_photo_bytes(path: Path) -> bytes:
+    """Read the text-safe bundled JPEG payload used by Telegram and the Mini App."""
+    encoded = path.read_text(encoding='ascii').strip()
+    payload = base64.b64decode(encoded, validate=True)
+    if not (payload.startswith(b'\xff\xd8') and payload.endswith(b'\xff\xd9')):
+        raise ValueError('Clarify banner payload is not a JPEG')
+    return payload
+
+
 def build_start_router(ctx) -> Router:
     router = Router(name='clarify-start')
     settings = ctx.settings
-    banner = Path(__file__).resolve().parents[2] / 'assets' / 'clarify_banner.webp'
+    banner = Path(__file__).resolve().parents[2] / 'assets' / 'clarify_banner.jpg.b64'
 
     @router.message(CommandStart())
     async def start(message: Message):
         user = await get_user(ctx, message.from_user)
-        await ctx.metrics.inc('starts', user.id)
+        try:
+            await ctx.metrics.inc('starts', user.id)
+        except Exception:
+            # Metrics must never make the main entry point unusable.
+            pass
+
         owner_line = '\n\n👑 <b>OWNER · Unlimited</b>' if is_creator(user, settings) else ''
         caption = (
             '✨ <b>Clarify</b>\n\n'
@@ -49,10 +64,23 @@ def build_start_router(ctx) -> Router:
             f'{owner_line}'
         )
         keyboard = _start_keyboard(settings.webapp_url)
+
+        sent_banner = False
         if banner.exists():
-            await message.answer_photo(FSInputFile(banner), caption=caption, reply_markup=keyboard)
-        else:
+            try:
+                photo = BufferedInputFile(_telegram_photo_bytes(banner), filename='clarify_banner.jpg')
+                await message.answer_photo(photo, caption=caption, reply_markup=keyboard)
+                sent_banner = True
+            except Exception as exc:
+                try:
+                    await ctx.errors.record(f'start-{message.message_id}', user.telegram_id, 'start_banner', exc)
+                except Exception:
+                    pass
+
+        # Never leave /start silent just because the branded image failed.
+        if not sent_banner:
             await message.answer(caption, reply_markup=keyboard)
+
         await message.answer('Быстрые действия всегда под рукой 👇', reply_markup=main_menu())
 
     @router.callback_query(F.data == 'start:unpack')
