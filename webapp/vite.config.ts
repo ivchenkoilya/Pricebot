@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/app/',
+  // Use relative asset URLs so the Telegram WebView works correctly even when
+  // Amvera/reverse-proxy serves the Mini App under /app/ or rewrites the prefix.
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
