@@ -18,6 +18,7 @@ from app.services.core import (
     UsageService,
     UserService,
 )
+from app.services.fast_media import FastMediaDownloader
 from app.services.media_downloader import MediaDownloader
 from app.services.page_reader import PageReader
 from app.services.reminders import ReminderService
@@ -72,7 +73,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         reminders=ReminderService(db),
         subscriptions=SubscriptionService(db),
         page_reader=PageReader(settings),
-        media_downloader=MediaDownloader(settings),
+        media_downloader=FastMediaDownloader(settings),
         stt=build_stt(settings, ai),
         media_stt=build_stt(media_stt_settings, ai),
         ai_sem=asyncio.Semaphore(settings.max_ai_concurrency),
