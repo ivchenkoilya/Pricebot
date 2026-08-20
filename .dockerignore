@@ -11,3 +11,5 @@ data
 *.db
 *.sqlite*
 tests
+webapp/node_modules
+webapp/dist
