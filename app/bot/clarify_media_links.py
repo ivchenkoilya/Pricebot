@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from aiogram import F, Router
@@ -13,6 +14,7 @@ from app.services.media_downloader import MediaDownloadError, MediaInfo, is_medi
 
 
 TRANSCRIPT_MARKER = '\n\nТранскрипт:\n'
+_ACTIVE_MEDIA_JOBS: set[tuple[int, int]] = set()
 
 
 def media_actions(material_id: int) -> InlineKeyboardMarkup:
@@ -99,7 +101,23 @@ async def _ensure_transcript(ctx, user, material, progress: Message):
             f'На твоём тарифе разбор видео доступен до {max_minutes} мин. Более длинные видео доступны в PRO.'
         )
 
-    await progress.edit_text('🎧 <b>Получаю аудиодорожку…</b>')
+    # Fast path: YouTube captions / auto-captions. This skips both media download
+    # and local Whisper and is normally the difference between seconds and minutes.
+    await progress.edit_text('⚡ <b>Ищу готовые субтитры…</b>')
+    transcript = await ctx.media_downloader.fast_transcript(url)
+    if transcript:
+        stored = _metadata_text(info) + TRANSCRIPT_MARKER + transcript
+        transcript_material = await ctx.materials.create(
+            user.id,
+            'video',
+            info.title,
+            stored,
+            f'Транскрипт видео готов · {info.platform} · {info.duration_text}',
+        )
+        await ctx.metrics.inc('media_transcribed_from_subtitles', user.id)
+        return transcript_material
+
+    await progress.edit_text('🎧 <b>Субтитров нет — получаю аудио…</b>')
     audio_path = None
     try:
         audio_path = await ctx.media_downloader.download_audio(url, max_mb=ctx.settings.media_max_file_mb)
@@ -131,8 +149,9 @@ def build_media_links_router(ctx) -> Router:
         progress = await message.answer('🎬 <b>Проверяю видео…</b>')
         try:
             info = await ctx.media_downloader.inspect(url)
+            user = await get_user(ctx, message.from_user)
             material = await ctx.materials.create(
-                (await get_user(ctx, message.from_user)).id,
+                user.id,
                 'video_link',
                 info.title,
                 _metadata_text(info),
@@ -140,6 +159,9 @@ def build_media_links_router(ctx) -> Router:
             )
             await ctx.metrics.inc('media_links_opened', material.user_id)
             await progress.edit_text(_info_card(info), reply_markup=media_actions(material.id))
+            # Warm the cheapest path in the background while the user is deciding
+            # which button to press. Only public caption metadata is prefetched.
+            ctx.media_downloader.prefetch_transcript(info.url)
             return material, progress
         except MediaDownloadError as exc:
             await progress.edit_text(f'⚠️ {esc(str(exc))}')
@@ -161,6 +183,7 @@ def build_media_links_router(ctx) -> Router:
                 status = progress or await message.answer('⬇️ <b>Загружаю видео…</b>')
                 path = None
                 try:
+                    await status.edit_text('⬇️ <b>Загружаю видео…</b>\nЦель — уложиться примерно в 30 секунд.')
                     path = await ctx.media_downloader.download_video(url, max_mb=max_mb, max_height=settings.media_video_max_height)
                     filename = ctx.media_downloader.safe_filename(info.title, path.suffix or '.mp4')
                     caption = f'✅ <b>{esc(info.title)}</b>\n📺 {esc(info.platform)} · ⏱ {info.duration_text}'
@@ -226,11 +249,31 @@ def build_media_links_router(ctx) -> Router:
             request_id = uuid.uuid4().hex
             await ctx.errors.record(request_id, message.chat.id if message.chat else None, 'media_link', exc)
             target = progress or message
-            text = '⚠️ Не получилось обработать видео. Возможно, платформа временно изменила защиту.'
+            text = '⚠️ Не получилось обработать видео. Возможно, платформа временно ограничила сервер.'
             if target is message:
                 await message.answer(text)
             else:
                 await target.edit_text(text)
+
+    async def run_with_deadline(message: Message, user, material, action: str, progress: Message):
+        key = (user.id, material.id)
+        if key in _ACTIVE_MEDIA_JOBS:
+            await progress.edit_text('⚡ Это видео уже обрабатывается. Дождись текущего действия — повторно запускать его не нужно.')
+            return
+        _ACTIVE_MEDIA_JOBS.add(key)
+        try:
+            await asyncio.wait_for(
+                run_action(message, user, material, action, progress),
+                timeout=max(5, int(settings.media_action_timeout_seconds)),
+            )
+        except TimeoutError:
+            await progress.edit_text(
+                '⏱ <b>Остановил ожидание через 30 секунд.</b>\n\n'
+                'Clarify не будет висеть минутами. Для анализа попробуй «Расшифровать» или «Краткий пересказ» — '
+                'если у ролика есть субтитры, они обычно работают значительно быстрее.'
+            )
+        finally:
+            _ACTIVE_MEDIA_JOBS.discard(key)
 
     @router.message(F.text)
     async def media_link(message: Message):
@@ -250,7 +293,7 @@ def build_media_links_router(ctx) -> Router:
         if action == 'inspect':
             return
         user = await get_user(ctx, message.from_user)
-        await run_action(message, user, material, action, progress)
+        await run_with_deadline(message, user, material, action, progress)
 
     @router.callback_query(F.data.startswith('media:'))
     async def media_callback(callback: CallbackQuery):
@@ -263,8 +306,11 @@ def build_media_links_router(ctx) -> Router:
         material = await ctx.materials.get(user.id, material_id)
         if not material:
             return await callback.answer('Видео больше не найдено в материалах', show_alert=True)
+        key = (user.id, material.id)
+        if key in _ACTIVE_MEDIA_JOBS:
+            return await callback.answer('Уже обрабатываю это видео ⚡', show_alert=False)
         await callback.answer()
-        progress = await callback.message.answer('⏳ <b>Готовлю…</b>')
-        await run_action(callback.message, user, material, action, progress)
+        progress = await callback.message.answer('⚡ <b>Готовлю…</b>')
+        await run_with_deadline(callback.message, user, material, action, progress)
 
     return router
