@@ -63,6 +63,14 @@ class UserStyle(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class ConversationState(Base):
+    __tablename__ = 'clarify_conversation_states'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), unique=True, index=True)
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AIUsage(Base):
     __tablename__ = 'razberi_ai_usage'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
