@@ -67,7 +67,7 @@ export default function SupportWidget() {
 
   return <>
     {!open && <button className="support-fab" aria-label="Поддержка" onClick={() => { haptic(); reset(); setOpen(true) }}>
-      <LifeBuoy />
+      <LifeBuoy /><span>Поддержка</span>
     </button>}
 
     {open && <div className="support-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) close() }}>
