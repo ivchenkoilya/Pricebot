@@ -6,6 +6,7 @@ import SupportWidget from './SupportWidget'
 import PlansWidget from './PlansWidget'
 import MaterialCleanupWidget from './MaterialCleanupWidget'
 import ProfileShortcutWidget from './ProfileShortcutWidget'
+import UXFixesWidget from './UXFixesWidget'
 import './v1.css'
 import './v1-mobile.css'
 import './support.css'
@@ -13,6 +14,7 @@ import './plans.css'
 import './plan-badge.css'
 import './product-upgrade.css'
 import './copilot.css'
+import './ux-fixes.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -21,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
     <PlansWidget />
     <MaterialCleanupWidget />
     <CopilotWidget />
+    <UXFixesWidget />
     <SupportWidget />
   </StrictMode>,
 )
