@@ -5,7 +5,7 @@ import html
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.razberi_helpers import get_user
 from app.bot.razberi_states import SupportMessage
@@ -49,6 +49,18 @@ def build_support_router(ctx) -> Router:
     @router.message(F.text == SUPPORT_BUTTON)
     async def support_button(message: Message, state: FSMContext):
         await begin(message, state)
+
+    @router.callback_query(F.data == 'support:open')
+    async def support_callback(callback: CallbackQuery, state: FSMContext):
+        if not ctx.settings.admin_telegram_id:
+            await callback.answer('Поддержка пока не настроена', show_alert=True)
+            return
+        await state.set_state(SupportMessage.waiting)
+        await callback.message.answer(
+            '🛟 <b>Поддержка Clarify</b>\n\n'
+            'Опиши ошибку, вопрос или идею. Можно отправить скриншот с подписью — сообщение придёт владельцу напрямую.'
+        )
+        await callback.answer()
 
     @router.message(SupportMessage.waiting, F.photo)
     async def support_photo(message: Message, state: FSMContext):
