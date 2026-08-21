@@ -13,14 +13,15 @@ export type Me = {
   first_name: string
   username?: string | null
   owner: boolean
-  plan: 'OWNER' | 'PRO' | 'FREE'
+  plan: 'OWNER' | 'MAX' | 'PRO' | 'FREE'
   pro_until?: string | null
-  usage: { used: number; limit: number | null }
+  usage: { used: number; limit: number | null; bonus?: number }
   timezone: string
   style: string
   ai_mode: 'fast' | 'smart'
   version: string
   pro_price: number
+  max_price?: number
 }
 
 const tg = () => window.Telegram?.WebApp
