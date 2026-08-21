@@ -1,0 +1,12 @@
+.v1-topbar{position:relative!important;display:grid!important;grid-template-columns:44px minmax(0,1fr) auto!important;align-items:center!important;gap:10px!important}
+.v1-profile-shortcut{order:-2;width:42px;height:42px;border:1px solid rgba(120,154,255,.22);border-radius:14px;background:linear-gradient(145deg,rgba(18,45,84,.94),rgba(20,27,68,.92));display:grid;place-items:center;padding:0;color:#e9f4ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.18);position:relative}
+.v1-profile-shortcut span{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(145deg,rgba(43,192,255,.22),rgba(140,98,255,.24));font-weight:900;font-size:14px}
+.v1-profile-shortcut svg{width:18px;height:18px;stroke-width:2}
+.v1-profile-shortcut i{position:absolute;right:-2px;bottom:-2px;width:9px;height:9px;border-radius:50%;background:#67e1ad;border:2px solid #07152d;box-shadow:0 0 8px rgba(103,225,173,.55)}
+.v1-brand{min-width:0}.v1-brand>div{min-width:0}.v1-plan{justify-self:end}
+.v1-dock-profile-hidden{display:none!important}
+.v1-dock{grid-template-columns:1fr 1fr 58px 1fr 1fr!important}
+.v1-dock>button:nth-child(1){order:1!important}.v1-dock>button:nth-child(2){order:2!important}.v1-dock>button:nth-child(3){order:3!important}.v1-dock>button:nth-child(4){order:4!important}.plans-tab{order:5!important}
+.plans-notice{position:sticky;top:8px;z-index:4;box-shadow:0 12px 30px rgba(0,0,0,.2)}
+.plan-buy:not(:disabled),.pack-card-bottom button:not(:disabled){transition:transform .14s ease,filter .14s ease}.plan-buy:not(:disabled):active,.pack-card-bottom button:not(:disabled):active{transform:scale(.985);filter:brightness(1.08)}
+@media(max-width:420px){.v1-topbar{grid-template-columns:40px minmax(0,1fr) auto!important;gap:8px!important}.v1-profile-shortcut{width:40px;height:40px;border-radius:13px}.v1-brand>span{width:40px!important;height:40px!important}.v1-brand b{font-size:16px!important}.v1-brand small{font-size:8px!important}.v1-plan{padding:9px 11px!important;font-size:10px!important}}
