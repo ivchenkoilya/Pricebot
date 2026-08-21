@@ -46,7 +46,7 @@ HELP_TEXT = (
     '3. Выбери быстрое действие или задай свой вопрос.\n'
     '4. Для новой темы используй /clear.\n\n'
     '<b>Команды:</b>\n/start — старт\n/help — помощь\n/about — о Clarify\n/examples — примеры\n'
-    '/summary — последний материал\n/clear — очистить контекст'
+    '/summary — последний материал\n/clear — очистить контекст\n/support — поддержка и сообщение об ошибке'
 )
 
 ABOUT_TEXT = (
@@ -77,7 +77,10 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text='✨ Возможности', callback_data='start:capabilities'),
             InlineKeyboardButton(text='💡 Примеры', callback_data='start:examples'),
         ],
-        [InlineKeyboardButton(text='❓ Помощь', callback_data='start:help')],
+        [
+            InlineKeyboardButton(text='❓ Помощь', callback_data='start:help'),
+            InlineKeyboardButton(text='🛟 Поддержка', callback_data='support:open'),
+        ],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
