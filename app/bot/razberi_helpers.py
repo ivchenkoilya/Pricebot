@@ -20,7 +20,7 @@ async def ensure_quota(ctx, message: Message, user, feature: str = 'ai') -> bool
         return True
     await ctx.metrics.inc('free_limit_reached', user.id)
     await message.answer(
-        'Лимит AI на сегодня закончился. 👑 PRO даёт больше обработок.',
+        'Лимит AI закончился. Во вкладке <b>«Тарифы»</b> можно увеличить дневной лимит или отдельно докупить +100, +500 или +2000 запросов.',
         reply_markup=pro_button(),
     )
     return False
