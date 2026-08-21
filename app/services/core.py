@@ -120,9 +120,6 @@ class UserService:
                 if user.is_pro and user.pro_until and user.pro_until <= now_utc():
                     user.is_pro = False
 
-            # The bot owner should never hit customer-facing FREE/PRO limits.
-            # ADMIN_TELEGRAM_ID is the single source of truth: no hardcoded ID and
-            # no payment/subscription record is created for this internal access.
             if self.settings.admin_telegram_id and telegram_user.id == self.settings.admin_telegram_id:
                 user.is_pro = True
                 user.pro_until = OWNER_PRO_UNTIL
@@ -463,7 +460,6 @@ class StyleService:
 class MetricService:
     def __init__(self, db):
         self.db = db
-        self.settings = settings if False else None
 
     async def inc(self, name: str, user_id: int | None = None, value: int = 1):
         async with self.db.sessions() as session:
