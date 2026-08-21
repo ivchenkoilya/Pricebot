@@ -5,8 +5,14 @@ from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.types import Message
 
 from app.ai.intent import classify_text_intent, looks_like_followup
-from app.bot.clarify_start import ABOUT_TEXT, CAPABILITIES_TEXT, EXAMPLES_TEXT, HELP_TEXT, NO_CONTEXT_TEXT
+from app.bot.clarify_start import ABOUT_TEXT, CAPABILITIES_TEXT, EXAMPLES_TEXT, HELP_TEXT
 from app.bot.razberi_helpers import get_user
+
+
+NO_CONTEXT_TEXT = (
+    'Я пока не нашёл подходящий контекст.\n\n'
+    'Отправь мне материал, документ, ссылку или изображение — я помогу разобраться.'
+)
 
 
 GREETING_TEXT = (
@@ -52,8 +58,6 @@ def build_chat_router(ctx) -> Router:
         if not text or text.startswith('/'):
             raise SkipHandler
 
-        # Brand/help/small-talk intents are intentionally answered before any DB
-        # or AI work so «Привет», «Кто ты?» and «Что умеешь?» feel instant.
         static_decision = classify_text_intent(text, False)
         if await _answer_static(message, static_decision.name):
             return
@@ -61,8 +65,6 @@ def build_chat_router(ctx) -> Router:
         user = await get_user(ctx, message.from_user)
         active = await ctx.conversations.recent_materials(user.id, 3)
 
-        # Explicit follow-ups must never become a new material when /clear was used
-        # or when the user has not sent anything yet.
         if not active and looks_like_followup(text):
             return await message.answer(NO_CONTEXT_TEXT)
 
