@@ -44,37 +44,16 @@ class SubscriptionService:
         plan = 'MAX' if str(plan).upper() == 'MAX' else 'PRO'
         async with self.db.sessions() as session:
             payment = (
-                await session.execute(
-                    select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id)
-                )
+                await session.execute(select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
             if payment is None:
-                session.add(
-                    RazberiPayment(
-                        user_id=user_id,
-                        telegram_charge_id=charge_id,
-                        currency='XTR',
-                        amount=amount,
-                        status='paid',
-                        is_recurring=is_recurring,
-                    )
-                )
+                session.add(RazberiPayment(user_id=user_id, telegram_charge_id=charge_id, currency='XTR', amount=amount, status='paid', is_recurring=is_recurring))
 
             subscription = (
-                await session.execute(
-                    select(RazberiSubscription).where(
-                        RazberiSubscription.telegram_charge_id == charge_id
-                    )
-                )
+                await session.execute(select(RazberiSubscription).where(RazberiSubscription.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
             if subscription is None:
-                subscription = RazberiSubscription(
-                    user_id=user_id,
-                    telegram_charge_id=charge_id,
-                    status='active',
-                    is_recurring=is_recurring,
-                    expires_at=expires_at,
-                )
+                subscription = RazberiSubscription(user_id=user_id, telegram_charge_id=charge_id, status='active', is_recurring=is_recurring, expires_at=expires_at)
                 session.add(subscription)
             else:
                 subscription.status = 'active'
@@ -95,25 +74,14 @@ class SubscriptionService:
         credits = max(0, int(credits))
         async with self.db.sessions() as session:
             existing = (
-                await session.execute(
-                    select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id)
-                )
+                await session.execute(select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
             user = await session.get(User, user_id)
             if user is None:
                 return 0
             data = _settings(user)
             if existing is None:
-                session.add(
-                    RazberiPayment(
-                        user_id=user_id,
-                        telegram_charge_id=charge_id,
-                        currency='XTR',
-                        amount=amount,
-                        status='paid',
-                        is_recurring=False,
-                    )
-                )
+                session.add(RazberiPayment(user_id=user_id, telegram_charge_id=charge_id, currency='XTR', amount=amount, status='paid', is_recurring=False))
                 data['clarify_bonus_requests'] = max(0, int(data.get('clarify_bonus_requests', 0) or 0)) + credits
                 user.notification_settings = json.dumps(data, ensure_ascii=False)
                 await session.commit()
@@ -136,10 +104,7 @@ class SubscriptionService:
             return (
                 await session.execute(
                     select(RazberiSubscription)
-                    .where(
-                        RazberiSubscription.user_id == user_id,
-                        RazberiSubscription.status == 'active',
-                    )
+                    .where(RazberiSubscription.user_id == user_id, RazberiSubscription.status == 'active')
                     .order_by(RazberiSubscription.created_at.desc())
                 )
             ).scalars().first()
@@ -160,28 +125,37 @@ class SubscriptionService:
     async def mark_refunded(self, charge_id: str):
         async with self.db.sessions() as session:
             payment = (
-                await session.execute(
-                    select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id)
-                )
+                await session.execute(select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
             if payment is None:
                 return None
             payment.status = 'refunded'
             subscription = (
-                await session.execute(
-                    select(RazberiSubscription).where(
-                        RazberiSubscription.telegram_charge_id == charge_id
-                    )
-                )
+                await session.execute(select(RazberiSubscription).where(RazberiSubscription.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
             if subscription is not None:
                 subscription.status = 'refunded'
                 user = await session.get(User, payment.user_id)
                 if user is not None:
-                    user.is_pro = False
-                    user.pro_until = datetime.utcnow()
-                    data = _settings(user)
-                    data.pop('clarify_plan', None)
-                    user.notification_settings = json.dumps(data, ensure_ascii=False)
+                    other_active = (
+                        await session.execute(
+                            select(RazberiSubscription)
+                            .where(
+                                RazberiSubscription.user_id == payment.user_id,
+                                RazberiSubscription.status == 'active',
+                                RazberiSubscription.telegram_charge_id != charge_id,
+                            )
+                            .order_by(RazberiSubscription.created_at.desc())
+                        )
+                    ).scalars().first()
+                    if other_active is None:
+                        user.is_pro = False
+                        user.pro_until = datetime.utcnow()
+                        data = _settings(user)
+                        data.pop('clarify_plan', None)
+                        user.notification_settings = json.dumps(data, ensure_ascii=False)
+                    elif other_active.expires_at:
+                        user.is_pro = True
+                        user.pro_until = other_active.expires_at
             await session.commit()
             return payment
