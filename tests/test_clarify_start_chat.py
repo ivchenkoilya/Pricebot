@@ -1,7 +1,7 @@
 import pytest
 
 from app.ai.intent import classify_text_intent, looks_like_followup
-from app.bot.clarify_start import ABOUT_TEXT, CAPABILITIES_TEXT, START_TEXT, _start_keyboard
+from app.bot.clarify_start import ABOUT_TEXT, CAPABILITIES_TEXT, HELP_TEXT, START_TEXT, _start_keyboard
 from app.bot.razberi_keyboards import actions
 from app.database.models import User
 from app.services.conversation_context import ConversationContextService
@@ -25,21 +25,27 @@ def test_brand_chat_intents_are_not_new_materials():
     assert classify_text_intent('Что ты умеешь?').name == 'capabilities'
     assert classify_text_intent('Список команд').name == 'capabilities'
     assert 'Привет! Я Clarify' in START_TEXT
-    assert 'Я Clarify' in ABOUT_TEXT
+    assert 'Clarify' in ABOUT_TEXT
     assert 'Возможности Clarify' in CAPABILITIES_TEXT
-    assert '/start' in CAPABILITIES_TEXT
-    assert '/summary' in CAPABILITIES_TEXT
-    assert '/clear' in CAPABILITIES_TEXT
+    assert '/start' in HELP_TEXT
+    assert '/summary' in HELP_TEXT
+    assert '/clear' in HELP_TEXT
 
 
-def test_start_keyboard_contains_requested_actions():
+def test_start_keyboard_is_compact_and_contains_core_actions():
     keyboard = _start_keyboard('')
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert '✨ Что умеет Clarify' in labels
+    assert '✨ Возможности' in labels
     assert '💡 Примеры' in labels
     assert '❓ Помощь' in labels
-    assert '🧠 Как это работает' in labels
-    assert '🗑 Очистить контекст' in labels
+    assert '🧠 Как это работает' not in labels
+    assert '🗑 Очистить контекст' not in labels
+
+
+def test_start_keyboard_adds_webapp_button_for_https_url():
+    keyboard = _start_keyboard('https://example.com/app/')
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert labels[0] == '🚀 Открыть Clarify'
 
 
 def test_material_actions_offer_followup_tools():
