@@ -75,6 +75,24 @@ def _audio_duration_seconds(path: Path) -> int:
         return 0
 
 
+def _image_storage_suffix(suffix: str, mime: str) -> str:
+    if suffix in IMAGE_SUFFIXES:
+        return suffix
+    return {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+    }.get(mime, '.jpg')
+
+
+async def _persist_image_source(ctx, user_id: int, data: bytes, suffix: str, mime: str) -> Path:
+    root = Path(ctx.settings.data_dir) / 'materials' / str(user_id)
+    await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
+    path = root / f'{uuid.uuid4().hex}{_image_storage_suffix(suffix, mime)}'
+    await asyncio.to_thread(path.write_bytes, data)
+    return path
+
+
 async def _ensure_ai_allowed(ctx, user) -> None:
     if not await ctx.usage.allowed(user):
         raise HTTPException(429, 'Лимит AI закончился. Открой вкладку «Тарифы» или докупи пакет запросов.')
@@ -140,7 +158,22 @@ async def intake_file(request: Request, file: UploadFile = File(...), tg: Telegr
             raise HTTPException(502, 'Clarify временно не смог разобрать изображение') from exc
         await ctx.usage.record(user.id, model, 'webapp_intake_image', usage)
         extracted = _structured_analysis_text(result) or result.summary or filename
-        item = await ctx.materials.create(user.id, 'image', result.title or filename, extracted, result.summary)
+        source_path = await _persist_image_source(ctx, user.id, data, suffix, mime)
+        try:
+            item = await ctx.materials.create(
+                user.id,
+                'image',
+                result.title or filename,
+                extracted,
+                result.summary,
+                local_path=str(source_path),
+            )
+        except Exception:
+            try:
+                source_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
         return _material_payload(item)
 
     temp_root = Path(ctx.settings.data_dir) / 'tmp' / 'webapp-intake'; temp_root.mkdir(parents=True, exist_ok=True)
