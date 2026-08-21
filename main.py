@@ -60,7 +60,11 @@ async def clarify_banner():
     return Response(
         content=clarify_banner_jpeg(),
         media_type='image/jpeg',
-        headers={'Cache-Control': 'public, max-age=86400'},
+        headers={
+            # Telegram WebView cached the old broken banner very aggressively.
+            # Keep this short so a deploy replaces it immediately.
+            'Cache-Control': 'public, max-age=120, must-revalidate',
+        },
     )
 
 
@@ -140,6 +144,20 @@ async def main() -> None:
             except Exception as exc:
                 await ctx.errors.record(f'reminder-{reminder.id}', telegram_id, 'reminder_send', exc)
 
+    async def prewarm_stt() -> None:
+        try:
+            await ctx.stt.prewarm()
+            log.info(
+                'Fast STT ready model=%s workers=%s chunks=%s',
+                settings.whisper_model,
+                settings.whisper_num_workers,
+                settings.whisper_parallel_chunks,
+            )
+        except Exception as exc:
+            # Do not block the bot if HuggingFace/model cache is temporarily slow.
+            # The provider will retry lazily on the first voice note.
+            log.warning('STT prewarm failed: %s', exc)
+
     scheduler.add_job(send_due_reminders, 'interval', seconds=20, max_instances=1, coalesce=True)
     scheduler.add_job(ctx.materials.cleanup_expired, 'cron', hour=4, minute=10, max_instances=1, coalesce=True)
     scheduler.start()
@@ -149,19 +167,21 @@ async def main() -> None:
         asyncio.create_task(
             dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types()),
             name='telegram',
-        )
+        ),
+        asyncio.create_task(prewarm_stt(), name='stt-prewarm'),
     ]
     if settings.serve_http:
         tasks.append(asyncio.create_task(run_http(), name='http'))
 
     log.info(
-        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s stt=%s webapp=%s',
+        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s stt=%s whisper=%s webapp=%s',
         settings.version,
         'on' if settings.ai_available else 'off',
         ctx.ai.endpoint_label,
         settings.fast,
         settings.smart,
         settings.stt_provider,
+        settings.whisper_model,
         settings.webapp_url or '/app/',
     )
     try:
