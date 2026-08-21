@@ -5,34 +5,26 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
 from app.bot.razberi_helpers import esc, get_user
-from app.bot.razberi_keyboards import main_menu
 from app.brand import clarify_banner_jpeg
 
 
 START_TEXT = (
     '<b>Привет! Я Clarify 👋</b>\n\n'
-    'Твой AI Workspace внутри Telegram. Отправляй голосовые, документы, скриншоты, сообщения и ссылки — '
-    'я превращу входящий хаос в понятный результат.\n\n'
-    '<b>Получай сразу:</b>\n'
-    '✨ краткую суть\n'
-    '📌 главное и факты\n'
-    '✅ следующие действия\n'
-    '📅 сроки и даты\n'
-    '💰 суммы и условия\n'
-    '⚠️ риски и ограничения\n\n'
-    '<b>Просто отправь материал или открой приложение Clarify.</b>'
+    'Разбираю голосовые, документы, скриншоты, сообщения и ссылки — и превращаю их в понятный результат.\n\n'
+    '✨ Кратко · 📌 Главное · ✅ Действия · 📅 Сроки · ⚠️ Риски\n\n'
+    '<b>Отправь материал в чат или открой Clarify.</b>'
 )
 
 CAPABILITIES_TEXT = (
     '<b>Возможности Clarify</b>\n\n'
-    '🎤 <b>Голосовые и аудио</b> — расшифровка, суть и действия.\n\n'
+    '🎤 <b>Голосовые и аудио</b> — быстрая расшифровка, суть и действия.\n\n'
     '📄 <b>Документы</b> — PDF, DOCX, TXT, MD, XLSX и CSV.\n\n'
     '🖼 <b>Фото и скриншоты</b> — текст, смысл, ошибки и важные детали.\n\n'
     '🔗 <b>Ссылки</b> — чтение доступных страниц и разбор содержимого.\n\n'
     '🎬 <b>Видео-ссылки</b> — расшифровка и AI-разбор; скачивание видео появится позже.\n\n'
-    '🧠 <b>Memory</b> — материалы остаются доступными для последующих вопросов.\n\n'
-    '📁 <b>Проекты</b> — собирай связанные материалы в одну рабочую тему.\n\n'
-    '✍️ <b>Написать за меня</b> — готовые сообщения в твоём стиле.'
+    '🧠 <b>Memory</b> — вопросы по сохранённым материалам.\n\n'
+    '📁 <b>Проекты</b> — связанные материалы в одной рабочей теме.\n\n'
+    '✍️ <b>Написать за меня</b> — готовые сообщения в нужном стиле.'
 )
 
 EXAMPLES_TEXT = (
@@ -50,8 +42,8 @@ EXAMPLES_TEXT = (
 HELP_TEXT = (
     '<b>Как пользоваться Clarify</b>\n\n'
     '1. Отправь материал в чат или через Mini App.\n'
-    '2. Clarify сохранит его в Memory и покажет краткий результат.\n'
-    '3. Нажимай «Главное», «Задачи», «Риски», «Просто» или задай свой вопрос.\n'
+    '2. Clarify сохранит его в Memory и покажет результат.\n'
+    '3. Выбери быстрое действие или задай свой вопрос.\n'
     '4. Для новой темы используй /clear.\n\n'
     '<b>Команды:</b>\n/start — старт\n/help — помощь\n/about — о Clarify\n/examples — примеры\n'
     '/summary — последний материал\n/clear — очистить контекст'
@@ -59,8 +51,8 @@ HELP_TEXT = (
 
 ABOUT_TEXT = (
     '<b>Clarify — AI Workspace внутри Telegram.</b>\n\n'
-    'Он помогает быстро понимать документы, голосовые, изображения, сообщения, ссылки и другие материалы. '
-    'Цель одна: меньше времени на разбор информации, больше ясности и конкретных действий.'
+    'Он помогает быстро понимать документы, голосовые, изображения, сообщения и ссылки. '
+    'Меньше времени на разбор информации — больше ясности и конкретных действий.'
 )
 
 HOW_TEXT = (
@@ -68,6 +60,11 @@ HOW_TEXT = (
     'Clarify определяет тип материала, извлекает содержимое, делает структурированный разбор и сохраняет его в Memory. '
     'После этого можно продолжать обычным языком: «а срок?», «что по цене?», «объясни проще?». '
     'В Mini App те же материалы доступны как личная база знаний.'
+)
+
+NO_CONTEXT_TEXT = (
+    'Я пока не вижу активного материала для этого вопроса.\n\n'
+    'Отправь документ, голосовое, изображение, текст или ссылку — и продолжим по нему.'
 )
 
 
@@ -80,11 +77,7 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text='✨ Возможности', callback_data='start:capabilities'),
             InlineKeyboardButton(text='💡 Примеры', callback_data='start:examples'),
         ],
-        [
-            InlineKeyboardButton(text='❓ Помощь', callback_data='start:help'),
-            InlineKeyboardButton(text='🧠 Как работает', callback_data='start:how'),
-        ],
-        [InlineKeyboardButton(text='🗑 Очистить контекст', callback_data='start:clear')],
+        [InlineKeyboardButton(text='❓ Помощь', callback_data='start:help')],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -96,18 +89,11 @@ def build_start_router(ctx) -> Router:
     async def send_start(message: Message) -> None:
         user = await get_user(ctx, message.from_user)
         await ctx.metrics.inc('starts', user.id)
-
-        # The old repository banner was an invalid/corrupted binary. Generate a
-        # real JPEG in memory so /start always has a valid Telegram photo.
         try:
-            await message.answer_photo(
-                BufferedInputFile(clarify_banner_jpeg(), filename='clarify-start.jpg')
-            )
+            await message.answer_photo(BufferedInputFile(clarify_banner_jpeg(), filename='clarify-start.jpg'))
         except Exception as exc:
             await ctx.errors.record('start-banner', message.from_user.id, 'start_banner', exc)
-
         await message.answer(START_TEXT, reply_markup=_start_keyboard(settings.webapp_url))
-        await message.answer('Быстрые инструменты всегда под рукой 👇', reply_markup=main_menu())
 
     @router.message(CommandStart())
     async def start(message: Message):
