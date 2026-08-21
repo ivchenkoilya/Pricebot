@@ -3,10 +3,14 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import select
 
 from app.ai.intent import classify_text_intent, looks_like_followup
 from app.bot.clarify_start import ABOUT_TEXT, CAPABILITIES_TEXT, EXAMPLES_TEXT, HELP_TEXT
 from app.bot.razberi_helpers import ensure_quota, esc, get_user
+from app.bot.razberi_keyboards import materials_list
+from app.database.razberi_models import Reminder
+from app.services.copilot import build_inbox, detect_copilot_command, rank_materials
 from app.services.core import bonus_requests, clarify_plan
 
 
@@ -69,9 +73,6 @@ def _looks_like_general_question(text: str, has_recent_material: bool) -> bool:
         return True
     if value.startswith(('почему вообще ', 'зачем вообще ', 'можешь объяснить ', 'можешь рассказать ')):
         return True
-    # With no active material a short question is ordinary chat, not a new
-    # material. If there is a recent material, ambiguous questions like
-    # «когда оплатить?» are intentionally left to the context router.
     return not has_recent_material and ('?' in text or value.startswith(('почему ', 'зачем ', 'сколько ', 'где ', 'когда ', 'как ')))
 
 
@@ -95,6 +96,68 @@ async def _answer_static(message: Message, intent: str) -> bool:
         else:
             await message.answer('Всё отлично — готов разбираться в информации 😄 Что посмотрим?')
         return True
+    return False
+
+
+async def _run_copilot_command(ctx, message: Message, user, text: str) -> bool:
+    command = detect_copilot_command(text)
+    if not command:
+        return False
+
+    if command.kind == 'recent_materials':
+        items = await ctx.materials.latest(user.id, 10)
+        if not items:
+            await message.answer('Memory пока пустая. Отправь первый материал — Clarify его сохранит.')
+        else:
+            await message.answer('🧠 <b>Последние материалы</b>\n\nНажми на нужный:', reply_markup=materials_list(items))
+        return True
+
+    if command.kind == 'memory_search':
+        pool = await ctx.materials.latest(user.id, 80)
+        hits = rank_materials(pool, command.value, limit=8)
+        if not hits:
+            await message.answer(f'🔎 Не нашёл в Memory ничего похожего на «{esc(command.value)}».')
+            return True
+        items = [hit.item for hit in hits]
+        preview = '\n'.join(f'• <b>{esc(hit.item.title)}</b> — {esc(hit.snippet[:110])}' for hit in hits[:3])
+        await message.answer(
+            f'🔎 <b>Нашёл по смыслу</b>\n\n{preview}\n\nОткрой материал кнопкой ниже:',
+            reply_markup=materials_list(items),
+        )
+        return True
+
+    if command.kind == 'create_project':
+        project = await ctx.projects.create(user.id, command.value)
+        await message.answer(
+            f'📁 Проект <b>{esc(project.name)}</b> готов.\n\nТеперь в карточке материала нажми «В проект», чтобы добавить туда документы, голосовые и переписки.'
+        )
+        return True
+
+    if command.kind == 'inbox':
+        materials = await ctx.materials.latest(user.id, 24)
+        async with ctx.db.sessions() as db:
+            reminders = list((await db.execute(
+                select(Reminder)
+                .where(Reminder.user_id == user.id, Reminder.status == 'active')
+                .order_by(Reminder.remind_at.asc())
+                .limit(10)
+            )).scalars())
+        inbox = build_inbox(materials, reminders, limit=6)
+        if not inbox['items']:
+            await message.answer('✅ Сейчас Clarify не видит срочных задач, сроков или рисков в последних материалах.')
+            return True
+        lines = [
+            '✨ <b>AI Inbox</b>',
+            '',
+            f"✅ Задачи: <b>{inbox['tasks']}</b> · ⏰ Сроки: <b>{inbox['deadlines']}</b> · ⚠️ Риски: <b>{inbox['risks']}</b>",
+            '',
+        ]
+        icons = {'task': '✅', 'deadline': '⏰', 'risk': '⚠️', 'reminder': '🔔'}
+        for item in inbox['items'][:6]:
+            lines.append(f"{icons.get(item['kind'], '•')} <b>{esc(item['title'])}</b>\n{esc(item['text'])}")
+        await message.answer('\n\n'.join(lines))
+        return True
+
     return False
 
 
@@ -147,9 +210,6 @@ def build_chat_router(ctx) -> Router:
         if not text or text.startswith('/'):
             raise SkipHandler
 
-        # Product/navigation questions must never inherit the latest material as
-        # context. This keeps Clarify behaving like a normal chatbot as well as
-        # a document assistant.
         if text == '🗑 Очистить материалы' or _looks_like_clear_materials(text):
             return await message.answer(
                 '🗑 <b>Можно удалить все материалы сразу.</b>\n\nЭто очистит Memory и уберёт материалы из проектов. Подтверди действие:',
@@ -179,7 +239,20 @@ def build_chat_router(ctx) -> Router:
 
         user = await get_user(ctx, message.from_user)
         active = await ctx.conversations.recent_materials(user.id, 3)
-        if _looks_like_general_question(text, bool(active)):
+
+        # Explicit natural-language commands run before ordinary material routing.
+        # Ambiguous follow-ups still stay attached to the recent material.
+        context_decision = classify_text_intent(text, bool(active))
+        explicit_global = any(marker in text.lower().replace('ё', 'е') for marker in ('мои задачи', 'что срочного', 'мои дедлайны', 'последние материалы', 'в памяти', 'в memory'))
+        if (not context_decision.uses_recent_material or explicit_global) and await _run_copilot_command(ctx, message, user, text):
+            return
+
+        if context_decision.uses_recent_material or looks_like_followup(text):
+            if active:
+                raise SkipHandler
+            return await message.answer(NO_CONTEXT_TEXT)
+
+        if _looks_like_general_question(text, bool(active)) or ('?' in text and len(text) <= 500):
             if not await ensure_quota(ctx, message, user):
                 return
             progress = await message.answer('✨ Думаю…')
@@ -196,8 +269,6 @@ def build_chat_router(ctx) -> Router:
                 await ctx.errors.record('general-chat', message.from_user.id, 'general_chat_question', exc)
                 return await progress.edit_text('⚠️ Не получилось ответить прямо сейчас. Попробуй ещё раз.')
 
-        if not active and looks_like_followup(text):
-            return await message.answer(NO_CONTEXT_TEXT)
         raise SkipHandler
 
     return router
