@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -34,6 +35,64 @@ def is_active_pro(user: User) -> bool:
 def is_creator(user: User, settings) -> bool:
     """True for the Telegram account configured as ADMIN_TELEGRAM_ID."""
     return bool(settings.admin_telegram_id and user.telegram_id == settings.admin_telegram_id)
+
+
+def user_settings_dict(user: User) -> dict:
+    try:
+        value = json.loads(user.notification_settings or '{}')
+        return value if isinstance(value, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def clarify_plan(user: User, settings) -> str:
+    """Return FREE / PRO / MAX / OWNER without requiring a schema migration."""
+    if is_creator(user, settings):
+        return 'OWNER'
+    if not is_active_pro(user):
+        return 'FREE'
+    raw = str(user_settings_dict(user).get('clarify_plan') or 'PRO').upper()
+    return 'MAX' if raw == 'MAX' else 'PRO'
+
+
+def plan_daily_ai_limit(user: User, settings) -> int | None:
+    plan = clarify_plan(user, settings)
+    if plan == 'OWNER':
+        return None
+    if plan == 'MAX':
+        return settings.max_daily_ai_limit
+    if plan == 'PRO':
+        return settings.pro_daily_ai_limit
+    return settings.free_daily_ai_limit
+
+
+def bonus_requests(user: User) -> int:
+    try:
+        return max(0, int(user_settings_dict(user).get('clarify_bonus_requests', 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def plan_voice_max_seconds(user: User, settings) -> int | None:
+    plan = clarify_plan(user, settings)
+    if plan == 'OWNER':
+        return None
+    if plan == 'MAX':
+        return settings.max_voice_max_seconds
+    if plan == 'PRO':
+        return settings.pro_voice_max_seconds
+    return settings.free_voice_max_seconds
+
+
+def plan_document_max_pages(user: User, settings) -> int:
+    plan = clarify_plan(user, settings)
+    if plan == 'OWNER':
+        return settings.max_document_max_pages
+    if plan == 'MAX':
+        return settings.max_document_max_pages
+    if plan == 'PRO':
+        return settings.pro_document_max_pages
+    return settings.free_document_max_pages
 
 
 class UserService:
@@ -118,14 +177,36 @@ class UsageService:
 
     async def allowed(self, user: User, feature: str = 'ai') -> bool:
         del feature
-        if is_creator(user, self.settings):
+        limit = plan_daily_ai_limit(user, self.settings)
+        if limit is None:
             return True
-        limit = self.settings.pro_daily_ai_limit if is_active_pro(user) else self.settings.free_daily_ai_limit
-        return (await self.ai_count_today(user.id)) < limit
+        if (await self.ai_count_today(user.id)) < limit:
+            return True
+        return bonus_requests(user) > 0
 
     async def record(self, user_id: int, model: str, feature: str, usage: dict | None = None):
         usage = usage or {}
         async with self.db.sessions() as session:
+            user = await session.get(User, user_id)
+            if user is not None and not is_creator(user, self.settings):
+                current = int(
+                    (
+                        await session.execute(
+                            select(func.count(AIUsage.id)).where(
+                                AIUsage.user_id == user_id,
+                                AIUsage.created_at >= self._today_start(),
+                            )
+                        )
+                    ).scalar_one()
+                )
+                limit = plan_daily_ai_limit(user, self.settings)
+                if limit is not None and current >= limit:
+                    data = user_settings_dict(user)
+                    extra = max(0, int(data.get('clarify_bonus_requests', 0) or 0))
+                    if extra > 0:
+                        data['clarify_bonus_requests'] = extra - 1
+                        user.notification_settings = json.dumps(data, ensure_ascii=False)
+
             session.add(
                 AIUsage(
                     user_id=user_id,
@@ -382,6 +463,7 @@ class StyleService:
 class MetricService:
     def __init__(self, db):
         self.db = db
+        self.settings = settings if False else None
 
     async def inc(self, name: str, user_id: int | None = None, value: int = 1):
         async with self.db.sessions() as session:
