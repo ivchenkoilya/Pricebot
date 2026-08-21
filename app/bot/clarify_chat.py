@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.ai.intent import classify_text_intent, looks_like_followup
 from app.bot.clarify_start import ABOUT_TEXT, CAPABILITIES_TEXT, EXAMPLES_TEXT, HELP_TEXT
-from app.bot.razberi_helpers import get_user
+from app.bot.razberi_helpers import ensure_quota, esc, get_user
 from app.services.core import bonus_requests, clarify_plan
 
 
@@ -18,6 +18,13 @@ NO_CONTEXT_TEXT = (
 GREETING_TEXT = (
     'Привет! Я <b>Clarify</b> 👋\n'
     'Отправь мне сообщение, голосовое, документ, скриншот или ссылку — помогу быстро разобраться.'
+)
+
+GENERAL_QUESTION_PREFIXES = (
+    'как приготовить ', 'как сделать ', 'как настроить ', 'как установить ', 'как подключить ',
+    'как заменить ', 'как починить ', 'как научиться ', 'как начать ', 'как выбрать ',
+    'что такое ', 'кто такой ', 'кто такая ', 'расскажи про ', 'расскажи о ',
+    'объясни что такое ', 'посоветуй ', 'порекомендуй ', 'в чем разница между ', 'в чём разница между ',
 )
 
 
@@ -52,6 +59,20 @@ def _looks_like_material_management(text: str) -> bool:
 def _looks_like_plans(text: str) -> bool:
     low = text.lower().replace('ё', 'е')
     return any(x in low for x in ('тариф', 'сколько стоит pro', 'сколько стоит подпис', 'pro max', 'докупить запрос', 'купить запрос', 'лимит запрос'))
+
+
+def _looks_like_general_question(text: str, has_recent_material: bool) -> bool:
+    value = ' '.join((text or '').strip().lower().split())
+    if not value or len(value) > 700:
+        return False
+    if value.startswith(GENERAL_QUESTION_PREFIXES):
+        return True
+    if value.startswith(('почему вообще ', 'зачем вообще ', 'можешь объяснить ', 'можешь рассказать ')):
+        return True
+    # With no active material a short question is ordinary chat, not a new
+    # material. If there is a recent material, ambiguous questions like
+    # «когда оплатить?» are intentionally left to the context router.
+    return not has_recent_material and ('?' in text or value.startswith(('почему ', 'зачем ', 'сколько ', 'где ', 'когда ', 'как ')))
 
 
 async def _answer_static(message: Message, intent: str) -> bool:
@@ -158,6 +179,23 @@ def build_chat_router(ctx) -> Router:
 
         user = await get_user(ctx, message.from_user)
         active = await ctx.conversations.recent_materials(user.id, 3)
+        if _looks_like_general_question(text, bool(active)):
+            if not await ensure_quota(ctx, message, user):
+                return
+            progress = await message.answer('✨ Думаю…')
+            try:
+                prompt = (
+                    'Ответь как обычный полезный AI-помощник Clarify. Этот вопрос НЕ нужно привязывать к сохранённым материалам. '
+                    'Ответь прямо, простым разговорным языком, без канцелярита и без Markdown-символов. '
+                    f'Вопрос пользователя: {text}'
+                )
+                answer, usage = await ctx.ai.ask(prompt, '', model=ctx.settings.fast)
+                await ctx.usage.record(user.id, ctx.settings.fast, 'general_chat_question', usage)
+                return await progress.edit_text(esc(answer))
+            except Exception as exc:
+                await ctx.errors.record('general-chat', message.from_user.id, 'general_chat_question', exc)
+                return await progress.edit_text('⚠️ Не получилось ответить прямо сейчас. Попробуй ещё раз.')
+
         if not active and looks_like_followup(text):
             return await message.answer(NO_CONTEXT_TEXT)
         raise SkipHandler
