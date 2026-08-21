@@ -8,6 +8,7 @@ import './v1.css'
 import './v1-mobile.css'
 import './support.css'
 import './plans.css'
+import './plan-badge.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
