@@ -1,19 +1,63 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    WebAppInfo,
+)
 
 
-def main_menu() -> ReplyKeyboardMarkup:
+BTN_UNPACK = '📎 Разобрать'
+BTN_WRITE = '✍️ Написать'
+BTN_MEMORY = '🧠 Memory'
+BTN_COMPARE = '🔀 Сравнить'
+BTN_PROJECTS = '📁 Проекты'
+BTN_INBOX = '✨ AI Inbox'
+BTN_PLANS = '💎 Тарифы'
+BTN_SUPPORT = '🛟 Поддержка'
+BTN_SETTINGS = '⚙️ Настройки'
+BTN_CLEAR = '🗑 Очистить'
+BTN_HELP = '❓ Помощь'
+BTN_MINIAPP = '🏠 Mini App'
+
+# Kept temporarily so users with an old persistent Telegram keyboard do not
+# lose functionality before /start refreshes it.
+LEGACY_MEMORY = '🧠 Мои материалы'
+LEGACY_SUPPORT = '🛟 Поддержка / сообщить об ошибке'
+LEGACY_CLEAR = '🗑 Очистить материалы'
+
+
+def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
+    mini_app = KeyboardButton(text=BTN_MINIAPP)
+    if (webapp_url or '').strip().startswith('https://'):
+        mini_app = KeyboardButton(text=BTN_MINIAPP, web_app=WebAppInfo(url=webapp_url.strip()))
+
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text='📎 Разобрать'), KeyboardButton(text='✍️ Написать')],
-            [KeyboardButton(text='🧠 Мои материалы'), KeyboardButton(text='🔀 Сравнить')],
-            [KeyboardButton(text='📁 Проекты'), KeyboardButton(text='💳 Тарифы')],
-            [KeyboardButton(text='⚙️ Настройки'), KeyboardButton(text='❓ Помощь')],
-            [KeyboardButton(text='🛟 Поддержка / сообщить об ошибке'), KeyboardButton(text='🗑 Очистить материалы')],
+            [KeyboardButton(text=BTN_UNPACK), KeyboardButton(text=BTN_WRITE)],
+            [KeyboardButton(text=BTN_MEMORY), KeyboardButton(text=BTN_INBOX)],
+            [KeyboardButton(text=BTN_PROJECTS), KeyboardButton(text=BTN_COMPARE)],
+            [KeyboardButton(text=BTN_PLANS), KeyboardButton(text=BTN_SUPPORT)],
+            [KeyboardButton(text=BTN_SETTINGS), KeyboardButton(text=BTN_CLEAR)],
+            [KeyboardButton(text=BTN_HELP), mini_app],
         ],
         resize_keyboard=True,
+        input_field_placeholder='Сообщение или материал…',
     )
+
+
+def plans_keyboard(settings) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f'👑 PRO · {settings.pro_stars_price} ⭐', callback_data='plan:buy:pro')],
+        [InlineKeyboardButton(text=f'💎 PRO MAX · {settings.max_stars_price} ⭐', callback_data='plan:buy:max')],
+        [
+            InlineKeyboardButton(text=f'+100 · {settings.request_pack_100_stars} ⭐', callback_data='plan:buy:pack100'),
+            InlineKeyboardButton(text=f'+500 · {settings.request_pack_500_stars} ⭐', callback_data='plan:buy:pack500'),
+        ],
+        [InlineKeyboardButton(text=f'+2000 запросов · {settings.request_pack_2000_stars} ⭐', callback_data='plan:buy:pack2000')],
+    ])
 
 
 def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
