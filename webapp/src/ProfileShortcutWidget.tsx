@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { UserRound } from 'lucide-react'
-import { api, haptic, hasTelegramAuth, Me } from './api'
+import { haptic, hasTelegramAuth } from './api'
 
 export default function ProfileShortcutWidget() {
   const [topbar, setTopbar] = useState<HTMLElement | null>(null)
   const [profileButton, setProfileButton] = useState<HTMLButtonElement | null>(null)
-  const [me, setMe] = useState<Me | null>(null)
 
   useEffect(() => {
     if (!hasTelegramAuth()) return
-    void api<Me>('/api/me').then(setMe).catch(() => undefined)
 
     const find = () => {
       const bar = document.querySelector('.v1-topbar') as HTMLElement | null
@@ -42,7 +40,6 @@ export default function ProfileShortcutWidget() {
 
   if (!hasTelegramAuth() || !topbar) return null
 
-  const initial = (me?.first_name || '').trim().charAt(0).toUpperCase()
   return createPortal(
     <button
       className="v1-profile-shortcut"
@@ -53,7 +50,7 @@ export default function ProfileShortcutWidget() {
         profileButton?.click()
       }}
     >
-      <span>{initial || <UserRound />}</span>
+      <span><UserRound /></span>
       <i />
     </button>,
     topbar,
