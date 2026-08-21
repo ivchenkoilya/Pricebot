@@ -76,6 +76,12 @@ export default function PlansWidget() {
   }, [load])
 
   useEffect(() => {
+    const openPlans = () => { haptic(); setOpen(true); setNotice(''); setError(''); void load() }
+    window.addEventListener('clarify:open-plans', openPlans)
+    return () => window.removeEventListener('clarify:open-plans', openPlans)
+  }, [load])
+
+  useEffect(() => {
     const tg = window.Telegram?.WebApp
     if (!open || !tg?.BackButton) return
     const close = () => setOpen(false)
@@ -90,35 +96,36 @@ export default function PlansWidget() {
   if (!hasTelegramAuth()) return null
 
   const buy = async (product: string) => {
-    setNotice(''); setError('')
-
-    // OWNER should still see the exact commercial storefront. We intentionally
-    // do not create a paid subscription invoice for the owner account because
-    // its access is already unlimited. Customer accounts use the same buttons
-    // and receive the real Telegram Stars invoice below.
-    if (catalog?.current === 'OWNER' && (product === 'pro' || product === 'max')) {
-      haptic('medium')
-      setNotice('Режим OWNER: у обычного пользователя эта кнопка сразу открывает официальный счёт Telegram Stars. На аккаунте владельца тариф уже Unlimited, поэтому повторно списывать Stars не нужно.')
-      return
-    }
-
-    setBuying(product)
+    setBuying(product); setNotice('Создаю официальный счёт Telegram Stars…'); setError('')
     try {
       const result = await api<{ invoice_url: string }>('/api/plans/invoice', {
         method: 'POST', body: JSON.stringify({ product }),
       })
-      openInvoice(result.invoice_url, () => {
-        successHaptic(); window.setTimeout(() => void load(), 900)
-      })
+      const opened = openInvoice(
+        result.invoice_url,
+        () => {
+          successHaptic()
+          setNotice('✅ Оплата прошла. Обновляю доступ…')
+          window.setTimeout(() => void load(), 900)
+        },
+        status => {
+          if (status === 'opened') setNotice('⭐ Счёт открыт. Подтверди оплату в окне Telegram Stars или закрой его для отмены.')
+          else if (status === 'cancelled') setNotice('Оплата отменена — Stars не списаны.')
+          else if (status === 'pending') setNotice('Telegram обрабатывает платёж…')
+          else if (status === 'failed') setError('Telegram не смог открыть счёт. Попробуй ещё раз.')
+        },
+      )
+      if (!opened) setError('Не удалось открыть Telegram Stars. Попробуй ещё раз.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось открыть оплату')
+      setNotice('')
     } finally {
       setBuying('')
     }
   }
 
   const tab = dock ? createPortal(
-    <button className={open ? 'plans-tab active' : 'plans-tab'} onClick={() => { haptic(); setOpen(true); void load() }}>
+    <button className={open ? 'plans-tab active' : 'plans-tab'} onClick={() => { haptic(); setOpen(true); setNotice(''); void load() }}>
       <span><Gem /></span><small>Тарифы</small><i />
     </button>, dock,
   ) : null
@@ -133,7 +140,7 @@ export default function PlansWidget() {
       {error && <div className="plans-error">{error}</div>}
       {notice && <div className="plans-notice">{notice}</div>}
 
-      {catalog?.current === 'OWNER' && <section className="plans-owner"><Crown /><div><small>OWNER · ВИТРИНА ВКЛЮЧЕНА</small><h2>Unlimited включён</h2><p>Ниже ты видишь тарифы и кнопки так же, как их видит обычный пользователь. Тарифные кнопки на OWNER работают как предпросмотр и не списывают Stars.</p></div></section>}
+      {catalog?.current === 'OWNER' && <section className="plans-owner"><Crown /><div><small>OWNER · РЕЖИМ ПРОВЕРКИ</small><h2>Unlimited включён</h2><p>Кнопки ниже теперь открывают настоящий Telegram Stars checkout и на аккаунте владельца. Можно проверить окно оплаты и просто закрыть его, не подтверждая покупку.</p></div></section>}
 
       {catalog && <div className="plans-grid">{catalog.plans.map(plan => {
         const product = plan.code === 'MAX' ? 'max' : plan.code.toLowerCase()
@@ -144,7 +151,7 @@ export default function PlansWidget() {
           <div className="plan-price">{paid ? <><b>{plan.price}</b><span>⭐ / {plan.period}</span></> : <><b>0</b><span>⭐ навсегда</span></>}</div>
           <div className="plan-reason">{plan.code === 'FREE' ? 'Полноценный старт: попробовать Clarify без оплаты и понять, насколько он экономит время.' : plan.code === 'PRO' ? 'Для ежедневной работы, учёбы и длинных материалов без постоянной остановки на бесплатном лимите.' : 'Для активного использования: большой пул запросов, Smart AI и максимум доступной работы в течение дня.'}</div>
           <ul>{plan.features.map(feature => <li key={feature}><Check />{feature}</li>)}</ul>
-          {paid && <button className="plan-buy" disabled={active || buying === product} onClick={() => void buy(product)}>{buying === product ? <LoaderCircle className="spin" /> : <Zap />}{active ? 'Тариф уже активен' : `Подключить за ${plan.price} ⭐`}</button>}
+          {paid && <button className="plan-buy" disabled={active || buying === product} onClick={() => void buy(product)}>{buying === product ? <LoaderCircle className="spin" /> : <Zap />}{active ? 'Тариф уже активен' : catalog.current === 'OWNER' ? `Проверить оплату · ${plan.price} ⭐` : `Подключить за ${plan.price} ⭐`}</button>}
           {!paid && <div className="plan-free-label"><Check /> Бесплатный тариф доступен всем</div>}
         </section>
       })}</div>}
