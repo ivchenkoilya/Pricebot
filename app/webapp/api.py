@@ -206,9 +206,10 @@ async def _invoice_link(ctx, user, product: str) -> str:
     item = _product(ctx.settings, product)
     if not item:
         raise HTTPException(400, 'Неизвестный тариф или пакет')
-    if is_creator(user, ctx.settings) and item['kind'] == 'plan':
-        raise HTTPException(400, 'OWNER уже имеет Unlimited-доступ')
 
+    # OWNER may open the same real checkout as customers for testing. The owner
+    # already has Unlimited access, so no purchase is required; simply closing
+    # the invoice leaves the account unchanged.
     kwargs = {
         'title': item['title'],
         'provider_token': '',
