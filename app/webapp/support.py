@@ -4,7 +4,7 @@ import html
 import uuid
 from types import SimpleNamespace
 
-from aiogram.types import BufferedInputFile
+from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,12 @@ class SupportBody(BaseModel):
 
 def _tg_namespace(tg: TelegramWebAppUser):
     return SimpleNamespace(id=tg.id, username=tg.username, first_name=tg.first_name or 'User')
+
+
+def _reply_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text='💬 Ответить пользователю', callback_data=f'supportreply:{telegram_id}')
+    ]])
 
 
 def _support_text(*, tg: TelegramWebAppUser, user, settings, kind: str, message: str, page: str | None) -> str:
@@ -59,7 +65,12 @@ async def _deliver(request: Request, tg: TelegramWebAppUser, *, kind: str, messa
     text = _support_text(tg=tg, user=user, settings=ctx.settings, kind=kind, message=message, page=page)
     request_id = uuid.uuid4().hex
     try:
-        await ctx.bot.send_message(admin_id, text, parse_mode='HTML')
+        await ctx.bot.send_message(
+            admin_id,
+            text,
+            parse_mode='HTML',
+            reply_markup=_reply_keyboard(tg.id),
+        )
         if screenshot:
             try:
                 await ctx.bot.send_photo(
