@@ -41,7 +41,8 @@ export default function SupportWidget() {
     setBusy(true)
     setError('')
     try {
-      const page = 'Telegram Mini App'
+      const activeLabel = document.querySelector('.v1-dock button.active small')?.textContent?.trim()
+      const page = activeLabel ? `Mini App · ${activeLabel}` : 'Telegram Mini App'
       if (file) {
         const form = new FormData()
         form.append('kind', kind)
@@ -98,7 +99,7 @@ export default function SupportWidget() {
             <input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} />
             <ImageIcon />
             <div><b>{file ? file.name : 'Добавить скриншот'}</b><small>{file ? `${Math.max(.01, file.size / 1024 / 1024).toFixed(1)} МБ` : 'Необязательно · до 8 МБ'}</small></div>
-            {file && <button type="button" onClick={e => { e.preventDefault(); setFile(null) }}><X /></button>}
+            {file && <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setFile(null) }}><X /></button>}
           </label>
 
           {error && <div className="support-error">{error}</div>}
