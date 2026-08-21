@@ -1,0 +1,2 @@
+body[data-clarify-plan="MAX"] .v1-plan:not(.owner){font-size:0}
+body[data-clarify-plan="MAX"] .v1-plan:not(.owner)::after{content:"💎 MAX";font-size:12px;font-weight:800}
