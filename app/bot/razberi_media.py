@@ -15,7 +15,7 @@ from app.bot.razberi_helpers import ensure_quota, esc, get_user
 from app.bot.razberi_keyboards import actions, pro_button
 from app.processors.documents import DocumentTooLarge, extract_document, render_pdf_pages
 from app.processors.text import TextProcessor
-from app.services.core import is_active_pro
+from app.services.core import clarify_plan, plan_document_max_pages, plan_voice_max_seconds
 
 
 def _optimized_image_payload(path: Path, settings) -> tuple[str, str]:
@@ -75,19 +75,17 @@ def build_media_router(ctx) -> Router:
 
         cached = await ctx.materials.by_file_unique(user.id, getattr(media, 'file_unique_id', None))
         if cached:
-            return await message.answer(
-                '♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title),
-                reply_markup=actions(cached.id, cached.type),
-            )
+            return await message.answer('♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title), reply_markup=actions(cached.id, cached.type))
 
-        if not is_active_pro(user):
-            if duration > settings.free_voice_max_seconds:
-                return await message.answer(
-                    f'FREE: голосовое до {settings.free_voice_max_seconds // 60} мин. Для длинных — PRO.',
-                    reply_markup=pro_button(),
-                )
-            if await ctx.usage.feature_count_today(user.id, 'voice') >= settings.free_voice_daily_limit:
-                return await message.answer('Лимит голосовых на сегодня закончился.', reply_markup=pro_button())
+        max_seconds = plan_voice_max_seconds(user, settings)
+        if max_seconds is not None and duration > max_seconds:
+            plan = clarify_plan(user, settings)
+            return await message.answer(
+                f'{plan}: голосовые до {max_seconds // 60} мин. Более высокий лимит смотри в «Тарифах».',
+                reply_markup=pro_button(),
+            )
+        if clarify_plan(user, settings) == 'FREE' and await ctx.usage.feature_count_today(user.id, 'voice') >= settings.free_voice_daily_limit:
+            return await message.answer('Лимит голосовых на сегодня закончился. Открой «Тарифы».', reply_markup=pro_button())
         if not await ensure_quota(ctx, message, user):
             return
 
@@ -113,21 +111,11 @@ def build_media_router(ctx) -> Router:
                 result, usage, model = await TextProcessor(ctx.ai).process(transcript, 'голосовое')
             await ctx.usage.record(user.id, model, 'voice', usage)
             material = await ctx.materials.create(
-                user.id,
-                'voice',
-                result.title,
-                transcript,
-                result.summary,
-                getattr(media, 'file_id', None),
-                getattr(media, 'file_unique_id', None),
+                user.id, 'voice', result.title, transcript, result.summary,
+                getattr(media, 'file_id', None), getattr(media, 'file_unique_id', None),
             )
             await ctx.metrics.inc('voice_processed', user.id)
-            await progress.edit_text(
-                result.to_compact_telegram(
-                    f'🎤 <b>Clarify</b> · {duration // 60:02d}:{duration % 60:02d}'
-                ),
-                reply_markup=actions(material.id, material.type),
-            )
+            await progress.edit_text(result.to_compact_telegram(f'🎤 <b>Clarify</b> · {duration // 60:02d}:{duration % 60:02d}'), reply_markup=actions(material.id, material.type))
         except Exception as exc:
             await ctx.errors.record(request_id, message.from_user.id, 'voice', exc)
             await progress.edit_text('⚠️ Не получилось обработать голосовое. Попробуй ещё раз или отправь аудиофайл.')
@@ -143,39 +131,22 @@ def build_media_router(ctx) -> Router:
         caption = (message.caption or '').strip()
         cached = await ctx.materials.by_file_unique(user.id, photo_item.file_unique_id)
         if cached and not caption:
-            return await message.answer(
-                '♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title),
-                reply_markup=actions(cached.id, cached.type),
-            )
+            return await message.answer('♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title), reply_markup=actions(cached.id, cached.type))
         path = Path(settings.data_dir, 'tmp', uuid.uuid4().hex + '.jpg')
-        progress = await message.answer(
-            '📸 <b>Clarify смотрит…</b>\nОтвечаю на подпись к фото' if caption
-            else '📸 <b>Clarify смотрит…</b>\nЧитаю изображение и выделяю главное'
-        )
+        progress = await message.answer('📸 <b>Clarify смотрит…</b>\nОтвечаю на подпись к фото' if caption else '📸 <b>Clarify смотрит…</b>\nЧитаю изображение и выделяю главное')
         try:
             await ctx.bot.download(photo_item, destination=path)
             image_b64, image_mime = await asyncio.to_thread(_optimized_image_payload, path, settings)
             async with ctx.ai_sem:
-                result, vision_usage, model, raw = await ctx.ai.analyze_image(
-                    image_b64,
-                    image_mime,
-                    _vision_instruction(caption),
-                )
+                result, vision_usage, model, raw = await ctx.ai.analyze_image(image_b64, image_mime, _vision_instruction(caption))
             await ctx.usage.record(user.id, model, 'image_caption' if caption else 'image', vision_usage)
             material_text = _material_text_from_result(result, raw, caption)
-            material = await ctx.materials.create(
-                user.id, 'image', result.title, material_text, result.summary, photo_item.file_id, photo_item.file_unique_id
-            )
+            material = await ctx.materials.create(user.id, 'image', result.title, material_text, result.summary, photo_item.file_id, photo_item.file_unique_id)
             await ctx.metrics.inc('images_processed', user.id)
-            await progress.edit_text(
-                result.to_compact_telegram('📸 <b>Clarify</b>'),
-                reply_markup=actions(material.id, material.type),
-            )
+            await progress.edit_text(result.to_compact_telegram('📸 <b>Clarify</b>'), reply_markup=actions(material.id, material.type))
         except Exception as exc:
             await ctx.errors.record(uuid.uuid4().hex, message.from_user.id, 'image', exc)
-            await progress.edit_text(
-                '⚠️ Не получилось разобрать изображение. Возможно, выбранная AI-модель не поддерживает vision.'
-            )
+            await progress.edit_text('⚠️ Не получилось разобрать изображение. Возможно, выбранная AI-модель не поддерживает vision.')
         finally:
             path.unlink(missing_ok=True)
 
@@ -198,10 +169,7 @@ def build_media_router(ctx) -> Router:
 
         cached = await ctx.materials.by_file_unique(user.id, document_item.file_unique_id)
         if cached and not caption:
-            return await message.answer(
-                '♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title),
-                reply_markup=actions(cached.id, cached.type),
-            )
+            return await message.answer('♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title), reply_markup=actions(cached.id, cached.type))
         if not await ensure_quota(ctx, message, user):
             return
 
@@ -212,24 +180,13 @@ def build_media_router(ctx) -> Router:
             if extension in image_extensions:
                 image_b64, image_mime = await asyncio.to_thread(_optimized_image_payload, path, settings)
                 async with ctx.ai_sem:
-                    result, usage, model, raw = await ctx.ai.analyze_image(
-                        image_b64,
-                        image_mime,
-                        _vision_instruction(caption),
-                    )
+                    result, usage, model, raw = await ctx.ai.analyze_image(image_b64, image_mime, _vision_instruction(caption))
                 await ctx.usage.record(user.id, model, 'image_caption' if caption else 'image', usage)
-                material = await ctx.materials.create(
-                    user.id, 'image', result.title or name,
-                    _material_text_from_result(result, raw, caption), result.summary,
-                    document_item.file_id, document_item.file_unique_id,
-                )
+                material = await ctx.materials.create(user.id, 'image', result.title or name, _material_text_from_result(result, raw, caption), result.summary, document_item.file_id, document_item.file_unique_id)
                 await ctx.metrics.inc('images_processed', user.id)
-                return await progress.edit_text(
-                    result.to_compact_telegram('📸 <b>Clarify</b>'),
-                    reply_markup=actions(material.id, material.type),
-                )
+                return await progress.edit_text(result.to_compact_telegram('📸 <b>Clarify</b>'), reply_markup=actions(material.id, material.type))
 
-            max_pages = settings.pro_document_max_pages if is_active_pro(user) else settings.free_document_max_pages
+            max_pages = plan_document_max_pages(user, settings)
             async with ctx.doc_sem:
                 text, pages, kind = await asyncio.to_thread(extract_document, str(path), extension, max_pages)
 
@@ -240,8 +197,7 @@ def build_media_router(ctx) -> Router:
                 async def ocr_page(page_number: int, png: bytes):
                     async with ctx.ai_sem:
                         raw, usage = await ctx.ai.vision(
-                            base64.b64encode(png).decode(),
-                            'image/png',
+                            base64.b64encode(png).decode(), 'image/png',
                             f'Это скан PDF, страница {page_number}. Выполни точное OCR-распознавание текста; сохрани таблицы, суммы и даты. Верни только распознанное содержимое страницы',
                         )
                     return page_number, raw, usage
@@ -250,52 +206,32 @@ def build_media_router(ctx) -> Router:
                 scanned.sort(key=lambda item: item[0])
                 text = '\n\n'.join(f'[Страница {page_number}]\n{raw}' for page_number, raw, _ in scanned)
                 if text.strip():
-                    total_usage = {
-                        'input': sum(item[2].get('input', 0) for item in scanned),
-                        'output': sum(item[2].get('output', 0) for item in scanned),
-                    }
+                    total_usage = {'input': sum(item[2].get('input', 0) for item in scanned), 'output': sum(item[2].get('output', 0) for item in scanned)}
                     await ctx.usage.record(user.id, settings.vision, 'pdf_vision_ocr', total_usage)
 
             if not text.strip():
-                return await progress.edit_text(
-                    '⚠️ В документе почти нет извлекаемого текста. Если это скан, выбранная AI-модель должна поддерживать vision.'
-                )
+                return await progress.edit_text('⚠️ В документе почти нет извлекаемого текста. Если это скан, выбранная AI-модель должна поддерживать vision.')
 
             page_text = f' · {pages} стр.' if pages else ''
             if caption:
                 await progress.edit_text('📄 <b>Clarify читает файл…</b>\n2/2 · Отвечаю на подпись к документу')
-                prompt = (
-                    f'{caption}\n\nОтветь прямо по документу. Не выдумывай. '
-                    'Если в тексте есть маркер [Страница N], укажи страницу для ключевого факта.'
-                )
+                prompt = f'{caption}\n\nОтветь прямо по документу. Не выдумывай. Если в тексте есть маркер [Страница N], укажи страницу для ключевого факта.'
                 async with ctx.ai_sem:
                     answer, usage = await ctx.ai.ask(prompt, text, model=settings.fast)
                 await ctx.usage.record(user.id, settings.fast, 'document_caption', usage)
-                material = await ctx.materials.create(
-                    user.id, kind, name, text, answer[:4000],
-                    document_item.file_id, document_item.file_unique_id,
-                )
+                material = await ctx.materials.create(user.id, kind, name, text, answer[:4000], document_item.file_id, document_item.file_unique_id)
                 await ctx.metrics.inc('documents_processed', user.id)
-                return await progress.edit_text(
-                    f'📄 <b>Clarify</b>{page_text}\n\n{esc(answer)}',
-                    reply_markup=actions(material.id, material.type),
-                )
+                return await progress.edit_text(f'📄 <b>Clarify</b>{page_text}\n\n{esc(answer)}', reply_markup=actions(material.id, material.type))
 
             await progress.edit_text('📄 <b>Clarify читает файл…</b>\n2/2 · Собираю главное, сроки и риски')
             async with ctx.ai_sem:
                 result, usage, model = await TextProcessor(ctx.ai).process(text, kind)
             await ctx.usage.record(user.id, model, 'document', usage)
-            material = await ctx.materials.create(
-                user.id, kind, result.title or name, text, result.summary,
-                document_item.file_id, document_item.file_unique_id,
-            )
+            material = await ctx.materials.create(user.id, kind, result.title or name, text, result.summary, document_item.file_id, document_item.file_unique_id)
             await ctx.metrics.inc('documents_processed', user.id)
-            await progress.edit_text(
-                result.to_telegram(f'📄 <b>Clarify</b> · документ{page_text}'),
-                reply_markup=actions(material.id, material.type),
-            )
+            await progress.edit_text(result.to_telegram(f'📄 <b>Clarify</b> · документ{page_text}'), reply_markup=actions(material.id, material.type))
         except DocumentTooLarge as exc:
-            await progress.edit_text(f'⚠️ {esc(exc)}. Для больших документов нужен PRO.', reply_markup=pro_button())
+            await progress.edit_text(f'⚠️ {esc(exc)}. Более высокий лимит доступен в «Тарифах».', reply_markup=pro_button())
         except Exception as exc:
             await ctx.errors.record(uuid.uuid4().hex, message.from_user.id, 'document', exc)
             if extension in image_extensions:
