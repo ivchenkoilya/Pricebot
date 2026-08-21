@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.bot.razberi_handlers import build_router
 from app.bot.razberi_middlewares import RateLimitMiddleware
-from app.brand import clarify_banner_jpeg
+from app.brand import clarify_banner_jpeg, clarify_banner_webp
 from app.config.settings import get_settings
 from app.context import build_context
 from app.database.session import Database
@@ -55,16 +55,20 @@ async def root():
 
 
 @app.get('/assets/clarify-banner.webp')
+async def clarify_banner_webp_route():
+    return Response(
+        content=clarify_banner_webp(),
+        media_type='image/webp',
+        headers={'Cache-Control': 'public, max-age=120, must-revalidate'},
+    )
+
+
 @app.get('/assets/clarify-banner.jpg')
-async def clarify_banner():
+async def clarify_banner_jpeg_route():
     return Response(
         content=clarify_banner_jpeg(),
         media_type='image/jpeg',
-        headers={
-            # Telegram WebView cached the old broken banner very aggressively.
-            # Keep this short so a deploy replaces it immediately.
-            'Cache-Control': 'public, max-age=120, must-revalidate',
-        },
+        headers={'Cache-Control': 'public, max-age=120, must-revalidate'},
     )
 
 
