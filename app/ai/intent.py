@@ -31,9 +31,15 @@ CONTEXT_REFERENCES = (
     'в фото', 'в документе', 'в файле', 'в сообщении', 'в голосовом', 'в тексте',
 )
 
+# These are independent questions even when a recent material exists. This list
+# prevents Clarify from answering «в материале это не указано» to ordinary chat
+# such as «как приготовить рис?» or «что такое VPN?».
 STANDALONE_HOWTO_PREFIXES = (
     'как сделать ', 'как создать ', 'как настроить ', 'как подключить ', 'как установить ',
     'как написать ', 'как разработать ', 'как собрать ', 'как запустить ', 'как купить ', 'как найти ',
+    'как приготовить ', 'как заменить ', 'как починить ', 'как научиться ', 'как начать ', 'как выбрать ',
+    'что такое ', 'кто такой ', 'кто такая ', 'расскажи про ', 'расскажи о ', 'посоветуй ', 'порекомендуй ',
+    'в чем разница между ', 'в чём разница между ', 'объясни что такое ',
 )
 
 INTERROGATIVE_WORDS = re.compile(
@@ -80,9 +86,6 @@ def looks_like_followup(text: str) -> bool:
         return False
     if _has_context_reference(low):
         return True
-    # Russian conversational follow-ups very often start with «а»: «А какой срок?»,
-    # «А почему?», «А кто это?». This signal is intentionally stronger than a
-    # generic question so standalone how-to requests stay independent.
     if low.startswith('а ') and (INTERROGATIVE_WORDS.search(low) or '?' in value):
         return True
     if low.startswith(('сделай короче', 'ещё короче', 'еще короче', 'объясни второй', 'а дальше')):
