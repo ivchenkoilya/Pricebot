@@ -27,3 +27,7 @@ class StyleSetup(StatesGroup):
 
 class SupportMessage(StatesGroup):
     waiting = State()
+
+
+class AdminSupportReply(StatesGroup):
+    waiting = State()
