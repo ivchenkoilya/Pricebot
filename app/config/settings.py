@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '1.0.0'
+    version: str = '1.1.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -52,15 +52,25 @@ class Settings(BaseSettings):
     image_max_side: int = 1600
     image_jpeg_quality: int = 82
 
-    # Clarify FREE / PRO
+    # Clarify plans. All prices are Telegram Stars (XTR) and can be overridden in Amvera.
     pro_stars_price: int = 299
-    free_daily_ai_limit: int = 10
-    pro_daily_ai_limit: int = 150
+    max_stars_price: int = 599
+    free_daily_ai_limit: int = 20
+    pro_daily_ai_limit: int = 300
+    max_daily_ai_limit: int = 1000
     free_voice_daily_limit: int = 3
-    free_voice_max_seconds: int = 120
-    free_document_max_pages: int = 10
+    free_voice_max_seconds: int = 600
+    pro_voice_max_seconds: int = 3600
+    max_voice_max_seconds: int = 10_800
+    free_document_max_pages: int = 15
     pro_document_max_pages: int = 200
+    max_document_max_pages: int = 500
     max_file_size_mb: int = 25
+
+    # One-time request packs. They are spent only after the daily plan allowance is exhausted.
+    request_pack_100_stars: int = 99
+    request_pack_500_stars: int = 349
+    request_pack_2000_stars: int = 999
 
     # Public media links: YouTube / Shorts / TikTok (+ best-effort Instagram/X)
     media_download_enabled: bool = True
