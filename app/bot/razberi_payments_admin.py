@@ -162,9 +162,8 @@ def build_payments_admin_router(ctx) -> Router:
             await ctx.metrics.inc('request_pack_purchased', user.id, payment.total_amount)
             return await message.answer(f'✅ Добавлено <b>{credits} запросов</b>. Сейчас в запасе: <b>{total}</b>.')
 
-        plan = 'PRO'
-        if payload.startswith('clarify_plan:max:'):
-            plan = 'MAX'
+        plan = 'MAX' if payload.startswith('clarify_plan:max:') else 'PRO'
+        previous = await ctx.subscriptions.latest_active(user.id)
         expiration = await ctx.subscriptions.activate(
             user.id,
             payment.telegram_payment_charge_id,
@@ -173,6 +172,27 @@ def build_payments_admin_router(ctx) -> Router:
             bool(getattr(payment, 'is_recurring', False)),
             plan=plan,
         )
+
+        # A user may upgrade/downgrade while another recurring tier is active.
+        # Telegram subscriptions are independent, so explicitly stop the previous
+        # recurrence to avoid charging for two Clarify plans next month.
+        if (
+            previous
+            and previous.telegram_charge_id != payment.telegram_payment_charge_id
+            and previous.is_recurring
+            and previous.status == 'active'
+        ):
+            try:
+                await ctx.bot.edit_user_star_subscription(
+                    user_id=message.from_user.id,
+                    telegram_payment_charge_id=previous.telegram_charge_id,
+                    is_canceled=True,
+                )
+                await ctx.subscriptions.mark_cancelled(user.id, previous.telegram_charge_id)
+            except Exception as exc:
+                await ctx.errors.record(uuid.uuid4().hex, message.from_user.id, 'cancel_previous_plan', exc)
+                await message.answer('⚠️ Новый тариф активирован, но старое автопродление не удалось отключить автоматически. Используй /cancel_pro или напиши в поддержку.')
+
         await ctx.metrics.inc('pro_purchased', user.id, payment.total_amount)
         local = expiration.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(user.timezone or settings.default_timezone))
         label = 'PRO MAX' if plan == 'MAX' else 'PRO'
