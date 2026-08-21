@@ -8,7 +8,7 @@ const options: Array<{ id: Kind; icon: ReactNode; title: string; text: string }>
   { id: 'bug', icon: <Bug />, title: 'Сообщить об ошибке', text: 'Что сломалось или работает не так' },
   { id: 'idea', icon: <Lightbulb />, title: 'Предложить идею', text: 'Что стоит добавить или улучшить' },
   { id: 'question', icon: <LifeBuoy />, title: 'Нужна помощь', text: 'Вопрос по работе Clarify' },
-  { id: 'other', icon: <MessageCircle />, title: 'Другое', text: 'Любое сообщение разработчику' },
+  { id: 'other', icon: <MessageCircle />, title: 'Другое', text: 'Любое сообщение в поддержку' },
 ]
 
 export default function SupportWidget() {
@@ -74,14 +74,14 @@ export default function SupportWidget() {
       <section className="support-sheet">
         <div className="support-handle" />
         <header>
-          <div><small>CLARIFY SUPPORT</small><h2>Связаться с разработчиком</h2></div>
+          <div><small>CLARIFY SUPPORT</small><h2>Связаться с поддержкой</h2></div>
           <button onClick={close} aria-label="Закрыть"><X /></button>
         </header>
 
         {sent ? <div className="support-success">
           <span><Check /></span>
           <h3>Отправлено</h3>
-          <p>Сообщение уже пришло владельцу Clarify в Telegram.</p>
+          <p>Поддержка получила сообщение. Когда тебе ответят, ответ придёт прямо в чат с Clarify — там можно продолжить диалог.</p>
           <button className="support-primary" onClick={close}>Готово</button>
         </div> : <form onSubmit={submit}>
           <div className="support-kinds">
@@ -104,7 +104,7 @@ export default function SupportWidget() {
 
           {error && <div className="support-error">{error}</div>}
           <button className="support-primary" disabled={busy || message.trim().length < 2}>
-            <Send /> {busy ? 'Отправляю…' : 'Отправить владельцу'}
+            <Send /> {busy ? 'Отправляю…' : 'Отправить в поддержку'}
           </button>
         </form>}
       </section>
