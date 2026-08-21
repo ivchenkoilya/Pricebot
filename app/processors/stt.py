@@ -23,10 +23,13 @@ class SpeechToTextProvider:
 
 
 class LocalWhisperProvider(SpeechToTextProvider):
-    """CPU-optimised faster-whisper provider for Telegram audio.
+    """Balanced faster-whisper provider for Telegram audio.
 
-    Long recordings are converted to 16 kHz mono chunks and decoded in parallel.
-    Speed is deliberately prioritised over small quality gains from beam search.
+    The previous configuration deliberately favoured raw speed (tiny model,
+    greedy decoding and no previous-text context). That was fast, but Russian
+    conversational voice notes could turn into visibly garbled source text.
+    This provider now keeps CPU-friendly int8 inference while using a base-model
+    quality floor and context-aware beam decoding.
     """
 
     _models: dict[tuple[str, str, str, int, int], object] = {}
@@ -38,8 +41,9 @@ class LocalWhisperProvider(SpeechToTextProvider):
     async def _get_model(self):
         cpu_threads = max(1, int(self.settings.whisper_cpu_threads or 1))
         workers = max(1, int(self.settings.whisper_num_workers or 1))
+        model_name = self.settings.resolved_whisper_model
         key = (
-            self.settings.whisper_model,
+            model_name,
             self.settings.whisper_compute_type,
             self.settings.resolved_whisper_cache_dir,
             cpu_threads,
@@ -52,7 +56,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
                 started = time.perf_counter()
                 model = await asyncio.to_thread(
                     WhisperModel,
-                    self.settings.whisper_model,
+                    model_name,
                     device='cpu',
                     compute_type=self.settings.whisper_compute_type,
                     download_root=self.settings.resolved_whisper_cache_dir,
@@ -61,7 +65,8 @@ class LocalWhisperProvider(SpeechToTextProvider):
                 )
                 self.__class__._models[key] = model
                 logger.info(
-                    'stt_model_ready model=%s compute=%s threads=%s workers=%s load_ms=%d',
+                    'stt_model_ready model=%s configured_model=%s compute=%s threads=%s workers=%s load_ms=%d',
+                    model_name,
                     self.settings.whisper_model,
                     self.settings.whisper_compute_type,
                     cpu_threads,
@@ -75,17 +80,30 @@ class LocalWhisperProvider(SpeechToTextProvider):
 
     @staticmethod
     def _transcribe_sync(model, path: str, language: str) -> str:
+        # A short Russian prompt helps Whisper keep punctuation and common
+        # conversational structure without asking it to invent missing words.
+        initial_prompt = None
+        if language.lower().startswith('ru'):
+            initial_prompt = (
+                'Русская разговорная речь. Сохраняй имена, числа, даты, сленг и разговорные выражения. '
+                'Расставляй естественную пунктуацию.'
+            )
         segments, _info = model.transcribe(
             path,
             language=language,
             vad_filter=True,
             vad_parameters={
-                'min_silence_duration_ms': 350,
-                'speech_pad_ms': 160,
+                # Less aggressive VAD prevents clipped word endings and short
+                # phrases, which was especially noticeable in Telegram Opus.
+                'min_silence_duration_ms': 500,
+                'speech_pad_ms': 260,
             },
-            beam_size=1,
-            best_of=1,
-            condition_on_previous_text=False,
+            beam_size=5,
+            best_of=5,
+            patience=1.0,
+            temperature=0.0,
+            condition_on_previous_text=True,
+            initial_prompt=initial_prompt,
             without_timestamps=True,
             word_timestamps=False,
         )
@@ -135,6 +153,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
     async def transcribe(self, path: str, language: str = 'ru') -> str:
         started = time.perf_counter()
         model = await self._get_model()
+        model_name = self.settings.resolved_whisper_model
         duration = await asyncio.to_thread(self._duration_seconds, path)
         threshold = max(120, int(self.settings.whisper_parallel_threshold_seconds))
         parallelism = max(1, int(self.settings.whisper_parallel_chunks))
@@ -144,7 +163,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
             text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
             logger.info(
                 'stt_done provider=local model=%s audio_seconds=%.1f chunks=1 elapsed_ms=%d',
-                self.settings.whisper_model,
+                model_name,
                 duration,
                 int((time.perf_counter() - started) * 1000),
             )
@@ -157,7 +176,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
             text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
             logger.info(
                 'stt_done provider=local model=%s audio_seconds=%.1f chunks=1 split=fallback elapsed_ms=%d',
-                self.settings.whisper_model,
+                model_name,
                 duration,
                 int((time.perf_counter() - started) * 1000),
             )
@@ -178,7 +197,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
             text = ' '.join(value for _index, value in results if value).strip()
             logger.info(
                 'stt_done provider=local model=%s audio_seconds=%.1f chunks=%d parallel=%d split_ms=%d elapsed_ms=%d',
-                self.settings.whisper_model,
+                model_name,
                 duration,
                 chunk_count,
                 min(parallelism, chunk_count),
