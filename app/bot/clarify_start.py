@@ -5,6 +5,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
 from app.bot.razberi_helpers import esc, get_user
+from app.bot.razberi_keyboards import main_menu
 from app.brand import clarify_banner_jpeg
 
 
@@ -52,6 +53,13 @@ HELP_TEXT = (
     '3. Выбери быстрое действие или задай свой вопрос.\n'
     '4. Можно писать команды естественно: «найди в памяти…», «что срочного?», «создай проект…».\n'
     '5. Для новой темы используй /clear.\n\n'
+    '<b>Быстрое меню снизу:</b>\n'
+    '📎 Разобрать · ✍️ Написать\n'
+    '🧠 Memory · ✨ AI Inbox\n'
+    '📁 Проекты · 🔀 Сравнить\n'
+    '💎 Тарифы · 🛟 Поддержка\n'
+    '⚙️ Настройки · 🗑 Очистить\n'
+    '❓ Помощь · 🏠 Mini App\n\n'
     '<b>Команды:</b>\n/start — старт\n/help — помощь\n/about — о Clarify\n/examples — примеры\n'
     '/summary — последний материал\n/clear — очистить контекст\n/support — поддержка и сообщение об ошибке'
 )
@@ -104,6 +112,9 @@ def build_start_router(ctx) -> Router:
         except Exception as exc:
             await ctx.errors.record('start-banner', message.from_user.id, 'start_banner', exc)
         await message.answer(START_TEXT, reply_markup=_start_keyboard(settings.webapp_url))
+        # Reply keyboards are persistent in Telegram. Sending the current menu on
+        # every /start replaces stale buttons left from older Clarify releases.
+        await message.answer('⌨️ <b>Быстрое меню обновлено.</b>', reply_markup=main_menu(settings.webapp_url))
 
     @router.message(CommandStart())
     async def start(message: Message):
@@ -111,7 +122,7 @@ def build_start_router(ctx) -> Router:
 
     @router.message(Command('help'))
     async def help_command(message: Message):
-        await message.answer(HELP_TEXT)
+        await message.answer(HELP_TEXT, reply_markup=main_menu(settings.webapp_url))
 
     @router.message(Command('about'))
     async def about_command(message: Message):
