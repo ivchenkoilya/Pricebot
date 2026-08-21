@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import logging
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from app.config.settings import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class SpeechToTextProvider:
@@ -19,11 +23,10 @@ class SpeechToTextProvider:
 
 
 class LocalWhisperProvider(SpeechToTextProvider):
-    """CPU-optimised faster-whisper provider.
+    """CPU-optimised faster-whisper provider for Telegram audio.
 
-    Long recordings are converted to lightweight 16 kHz mono chunks and decoded
-    in parallel.  This matters on Amvera much more than beam-search quality: a
-    10–20 minute voice should not spend many minutes in one serial Whisper call.
+    Long recordings are converted to 16 kHz mono chunks and decoded in parallel.
+    Speed is deliberately prioritised over small quality gains from beam search.
     """
 
     _models: dict[tuple[str, str, str, int, int], object] = {}
@@ -46,6 +49,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
             if key not in self.__class__._models:
                 from faster_whisper import WhisperModel
 
+                started = time.perf_counter()
                 model = await asyncio.to_thread(
                     WhisperModel,
                     self.settings.whisper_model,
@@ -56,6 +60,14 @@ class LocalWhisperProvider(SpeechToTextProvider):
                     num_workers=workers,
                 )
                 self.__class__._models[key] = model
+                logger.info(
+                    'stt_model_ready model=%s compute=%s threads=%s workers=%s load_ms=%d',
+                    self.settings.whisper_model,
+                    self.settings.whisper_compute_type,
+                    cpu_threads,
+                    workers,
+                    int((time.perf_counter() - started) * 1000),
+                )
         return self.__class__._models[key]
 
     async def prewarm(self) -> None:
@@ -121,22 +133,39 @@ class LocalWhisperProvider(SpeechToTextProvider):
             raise
 
     async def transcribe(self, path: str, language: str = 'ru') -> str:
+        started = time.perf_counter()
         model = await self._get_model()
         duration = await asyncio.to_thread(self._duration_seconds, path)
         threshold = max(120, int(self.settings.whisper_parallel_threshold_seconds))
         parallelism = max(1, int(self.settings.whisper_parallel_chunks))
+        chunk_count = 1
 
-        # Short voice notes are faster without an ffmpeg split. Long recordings
-        # benefit strongly from two simultaneous tiny-model workers.
         if duration < threshold or parallelism <= 1:
-            return await asyncio.to_thread(self._transcribe_sync, model, path, language)
+            text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
+            logger.info(
+                'stt_done provider=local model=%s audio_seconds=%.1f chunks=1 elapsed_ms=%d',
+                self.settings.whisper_model,
+                duration,
+                int((time.perf_counter() - started) * 1000),
+            )
+            return text
 
+        split_started = time.perf_counter()
         try:
             folder, chunks = await asyncio.to_thread(self._split_long_audio, path)
         except Exception:
-            return await asyncio.to_thread(self._transcribe_sync, model, path, language)
+            text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
+            logger.info(
+                'stt_done provider=local model=%s audio_seconds=%.1f chunks=1 split=fallback elapsed_ms=%d',
+                self.settings.whisper_model,
+                duration,
+                int((time.perf_counter() - started) * 1000),
+            )
+            return text
 
-        semaphore = asyncio.Semaphore(min(parallelism, len(chunks)))
+        split_ms = int((time.perf_counter() - split_started) * 1000)
+        chunk_count = len(chunks)
+        semaphore = asyncio.Semaphore(min(parallelism, chunk_count))
 
         async def run_chunk(index: int, chunk: str):
             async with semaphore:
@@ -146,7 +175,17 @@ class LocalWhisperProvider(SpeechToTextProvider):
         try:
             results = await asyncio.gather(*(run_chunk(i, chunk) for i, chunk in enumerate(chunks)))
             results.sort(key=lambda item: item[0])
-            return ' '.join(text for _index, text in results if text).strip()
+            text = ' '.join(value for _index, value in results if value).strip()
+            logger.info(
+                'stt_done provider=local model=%s audio_seconds=%.1f chunks=%d parallel=%d split_ms=%d elapsed_ms=%d',
+                self.settings.whisper_model,
+                duration,
+                chunk_count,
+                min(parallelism, chunk_count),
+                split_ms,
+                int((time.perf_counter() - started) * 1000),
+            )
+            return text
         finally:
             await asyncio.to_thread(shutil.rmtree, folder, True)
 
@@ -159,6 +198,7 @@ class OpenAICompatibleSTTProvider(SpeechToTextProvider):
     async def transcribe(self, path: str, language: str = 'ru') -> str:
         if self.client is None:
             raise RuntimeError('AI client не настроен')
+        started = time.perf_counter()
 
         async def request() -> str:
             with open(path, 'rb') as file:
@@ -169,7 +209,13 @@ class OpenAICompatibleSTTProvider(SpeechToTextProvider):
                 )
             return (response.text or '').strip()
 
-        return await asyncio.wait_for(request(), timeout=self.settings.stt_remote_timeout)
+        text = await asyncio.wait_for(request(), timeout=self.settings.stt_remote_timeout)
+        logger.info(
+            'stt_done provider=remote model=%s elapsed_ms=%d',
+            self.settings.stt_remote_model,
+            int((time.perf_counter() - started) * 1000),
+        )
+        return text
 
 
 def build_stt(settings: Settings, ai_provider=None) -> SpeechToTextProvider:
