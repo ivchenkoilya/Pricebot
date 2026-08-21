@@ -15,7 +15,6 @@ NO_CONTEXT_TEXT = (
     'Отправь мне материал, документ, ссылку или изображение — я помогу разобраться.'
 )
 
-
 GREETING_TEXT = (
     'Привет! Я <b>Clarify</b> 👋\n'
     'Отправь мне сообщение, голосовое, документ, скриншот или ссылку — помогу быстро разобраться.'
@@ -29,16 +28,20 @@ def _clear_keyboard() -> InlineKeyboardMarkup:
     ]])
 
 
-def _plans_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='💳 Показать тарифы', callback_data='plans:open')]])
+def _plans_keyboard(settings=None) -> InlineKeyboardMarkup:
+    if settings is None:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='💳 Показать тарифы', callback_data='plans:open')]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f'👑 PRO · {settings.pro_stars_price} ⭐', callback_data='plan:buy:pro')],
+        [InlineKeyboardButton(text=f'💎 PRO MAX · {settings.max_stars_price} ⭐', callback_data='plan:buy:max')],
+        [InlineKeyboardButton(text=f'+100 · {settings.request_pack_100_stars} ⭐', callback_data='plan:buy:pack100'), InlineKeyboardButton(text=f'+500 · {settings.request_pack_500_stars} ⭐', callback_data='plan:buy:pack500')],
+        [InlineKeyboardButton(text=f'+2000 запросов · {settings.request_pack_2000_stars} ⭐', callback_data='plan:buy:pack2000')],
+    ])
 
 
 def _looks_like_clear_materials(text: str) -> bool:
     low = text.lower().replace('ё', 'е')
-    delete_words = ('удал', 'очист', 'стер')
-    material_words = ('материал', 'memory', 'памят', 'истори')
-    all_words = ('все', 'всю', 'полност')
-    return any(x in low for x in delete_words) and any(x in low for x in material_words) and any(x in low for x in all_words)
+    return any(x in low for x in ('удал', 'очист', 'стер')) and any(x in low for x in ('материал', 'memory', 'памят', 'истори')) and any(x in low for x in ('все', 'всю', 'полност'))
 
 
 def _looks_like_material_management(text: str) -> bool:
@@ -53,20 +56,15 @@ def _looks_like_plans(text: str) -> bool:
 
 async def _answer_static(message: Message, intent: str) -> bool:
     if intent == 'greeting':
-        await message.answer(GREETING_TEXT)
-        return True
+        await message.answer(GREETING_TEXT); return True
     if intent == 'about':
-        await message.answer(ABOUT_TEXT)
-        return True
+        await message.answer(ABOUT_TEXT); return True
     if intent == 'capabilities':
-        await message.answer(CAPABILITIES_TEXT)
-        return True
+        await message.answer(CAPABILITIES_TEXT); return True
     if intent == 'help':
-        await message.answer(HELP_TEXT)
-        return True
+        await message.answer(HELP_TEXT); return True
     if intent == 'examples':
-        await message.answer(EXAMPLES_TEXT)
-        return True
+        await message.answer(EXAMPLES_TEXT); return True
     if intent == 'general_chat':
         low = (message.text or '').strip().lower()
         if any(word in low for word in ('спасибо', 'спс', 'благодарю')):
@@ -82,11 +80,25 @@ async def _answer_static(message: Message, intent: str) -> bool:
 def build_chat_router(ctx) -> Router:
     router = Router(name='clarify-chat')
 
+    @router.callback_query(F.data == 'plans:open')
+    async def plans_open(callback: CallbackQuery):
+        user = await get_user(ctx, callback.from_user)
+        plan = clarify_plan(user, ctx.settings)
+        extra = bonus_requests(user)
+        await callback.message.answer(
+            f'💳 <b>Тарифы Clarify</b>\n\nСейчас: <b>{plan}</b>' + (f' · +{extra} запросов' if extra else '') + '\n\n'
+            f'<b>FREE</b> — {ctx.settings.free_daily_ai_limit} запросов/день\n'
+            f'<b>PRO</b> — {ctx.settings.pro_daily_ai_limit} запросов/день · {ctx.settings.pro_stars_price} ⭐ / 30 дней\n'
+            f'<b>PRO MAX</b> — {ctx.settings.max_daily_ai_limit} запросов/день · {ctx.settings.max_stars_price} ⭐ / 30 дней\n\n'
+            'Можно также докупить +100, +500 или +2000 запросов. Пакеты не сгорают в конце дня.',
+            reply_markup=_plans_keyboard(ctx.settings),
+        )
+        await callback.answer()
+
     @router.callback_query(F.data == 'materials:clear:ask')
     async def clear_ask(callback: CallbackQuery):
         await callback.message.answer(
-            '🗑 <b>Удалить все материалы?</b>\n\n'
-            'Memory очистится полностью. Проекты останутся, но удалённые материалы исчезнут из них. Это действие нельзя отменить.',
+            '🗑 <b>Удалить все материалы?</b>\n\nMemory очистится полностью. Проекты останутся, но удалённые материалы исчезнут из них. Это действие нельзя отменить.',
             reply_markup=_clear_keyboard(),
         )
         await callback.answer()
@@ -114,18 +126,17 @@ def build_chat_router(ctx) -> Router:
         if not text or text.startswith('/'):
             raise SkipHandler
 
-        # Questions about Clarify itself must never be answered from the last
-        # uploaded material. Handle product/navigation intents before context QA.
+        # Product/navigation questions must never inherit the latest material as
+        # context. This keeps Clarify behaving like a normal chatbot as well as
+        # a document assistant.
         if text == '🗑 Очистить материалы' or _looks_like_clear_materials(text):
             return await message.answer(
-                '🗑 <b>Можно удалить все материалы сразу.</b>\n\n'
-                'Это очистит Memory и уберёт материалы из проектов. Подтверди действие:',
+                '🗑 <b>Можно удалить все материалы сразу.</b>\n\nЭто очистит Memory и уберёт материалы из проектов. Подтверди действие:',
                 reply_markup=_clear_keyboard(),
             )
         if _looks_like_material_management(text):
             return await message.answer(
-                'Один материал удаляется кнопкой <b>«Удалить»</b> внутри его карточки.\n\n'
-                'Если хочешь очистить Memory полностью — нажми кнопку ниже.',
+                'Один материал удаляется кнопкой <b>«Удалить»</b> внутри его карточки.\n\nЕсли хочешь очистить Memory полностью — нажми кнопку ниже.',
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='🗑 Удалить все материалы', callback_data='materials:clear:ask')]]),
             )
         if _looks_like_plans(text):
@@ -147,10 +158,8 @@ def build_chat_router(ctx) -> Router:
 
         user = await get_user(ctx, message.from_user)
         active = await ctx.conversations.recent_materials(user.id, 3)
-
         if not active and looks_like_followup(text):
             return await message.answer(NO_CONTEXT_TEXT)
-
         raise SkipHandler
 
     return router
