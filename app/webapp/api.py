@@ -14,7 +14,13 @@ from sqlalchemy import delete, func, or_, select
 
 from app.database.models import User
 from app.database.razberi_models import Material, Project, ProjectMaterial, Reminder
-from app.services.core import is_active_pro, is_creator
+from app.services.core import (
+    bonus_requests,
+    clarify_plan,
+    is_active_pro,
+    is_creator,
+    plan_daily_ai_limit,
+)
 from app.services.reminders import parse_reminder
 from app.webapp.auth import TelegramWebAppUser, runtime_context, telegram_webapp_user
 
@@ -23,7 +29,8 @@ SUBSCRIPTION_PERIOD_SECONDS = 2_592_000
 PAGE_RE = re.compile(r'\[Страница\s+(\d+)\]', re.I)
 METRICS = {
     'webapp_open', 'material_open', 'material_question', 'material_action', 'project_open',
-    'compare_run', 'pro_page_open', 'pro_purchase_click', 'reminder_created', 'compose_run',
+    'compare_run', 'pro_page_open', 'pro_purchase_click', 'plans_open', 'plans_purchase_click',
+    'reminder_created', 'compose_run', 'materials_cleared',
 }
 
 
@@ -72,6 +79,10 @@ class SettingsBody(BaseModel):
 
 class MetricBody(BaseModel):
     name: str
+
+
+class PlanInvoiceBody(BaseModel):
+    product: str = Field(min_length=2, max_length=32)
 
 
 def _tg_namespace(tg: TelegramWebAppUser):
@@ -124,13 +135,111 @@ def _parse_remind_at(value: str, timezone_name: str) -> datetime:
     return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _catalog(settings) -> dict[str, dict]:
+    return {
+        'free': {
+            'code': 'FREE', 'title': 'FREE', 'price': 0, 'period': 'навсегда',
+            'daily_requests': settings.free_daily_ai_limit,
+            'voice_minutes': settings.free_voice_max_seconds // 60,
+            'document_pages': settings.free_document_max_pages,
+            'tagline': 'Для знакомства с Clarify',
+            'features': [
+                f'{settings.free_daily_ai_limit} AI-запросов в день',
+                f'Голосовые до {settings.free_voice_max_seconds // 60} минут',
+                f'Документы до {settings.free_document_max_pages} страниц',
+                'Memory и базовые быстрые действия',
+                'Fast AI режим',
+            ],
+        },
+        'pro': {
+            'code': 'PRO', 'title': 'PRO', 'price': settings.pro_stars_price, 'period': '30 дней',
+            'daily_requests': settings.pro_daily_ai_limit,
+            'voice_minutes': settings.pro_voice_max_seconds // 60,
+            'document_pages': settings.pro_document_max_pages,
+            'tagline': 'Для ежедневной работы',
+            'features': [
+                f'{settings.pro_daily_ai_limit} AI-запросов в день',
+                f'Голосовые до {settings.pro_voice_max_seconds // 60} минут',
+                f'Документы до {settings.pro_document_max_pages} страниц',
+                'Smart AI режим',
+                'Длинные материалы, Memory, проекты и сравнения',
+            ],
+        },
+        'max': {
+            'code': 'MAX', 'title': 'PRO MAX', 'price': settings.max_stars_price, 'period': '30 дней',
+            'daily_requests': settings.max_daily_ai_limit,
+            'voice_minutes': settings.max_voice_max_seconds // 60,
+            'document_pages': settings.max_document_max_pages,
+            'tagline': 'Максимум для активной работы',
+            'features': [
+                f'{settings.max_daily_ai_limit} AI-запросов в день',
+                f'Голосовые до {settings.max_voice_max_seconds // 60} минут',
+                f'Документы до {settings.max_document_max_pages} страниц',
+                'Smart AI режим',
+                'Максимальные лимиты Clarify без постоянных стопов',
+            ],
+        },
+    }
+
+
+def _packs(settings) -> list[dict]:
+    return [
+        {'product': 'pack100', 'requests': 100, 'price': settings.request_pack_100_stars, 'title': '+100 запросов'},
+        {'product': 'pack500', 'requests': 500, 'price': settings.request_pack_500_stars, 'title': '+500 запросов'},
+        {'product': 'pack2000', 'requests': 2000, 'price': settings.request_pack_2000_stars, 'title': '+2000 запросов'},
+    ]
+
+
+def _product(settings, product: str) -> dict | None:
+    product = product.lower().strip()
+    if product == 'pro':
+        return {'kind': 'plan', 'plan': 'PRO', 'price': settings.pro_stars_price, 'title': 'Clarify PRO', 'label': 'PRO · 30 дней'}
+    if product == 'max':
+        return {'kind': 'plan', 'plan': 'MAX', 'price': settings.max_stars_price, 'title': 'Clarify PRO MAX', 'label': 'PRO MAX · 30 дней'}
+    for item in _packs(settings):
+        if item['product'] == product:
+            return {'kind': 'pack', **item}
+    return None
+
+
+async def _invoice_link(ctx, user, product: str) -> str:
+    item = _product(ctx.settings, product)
+    if not item:
+        raise HTTPException(400, 'Неизвестный тариф или пакет')
+    if is_creator(user, ctx.settings) and item['kind'] == 'plan':
+        raise HTTPException(400, 'OWNER уже имеет Unlimited-доступ')
+
+    kwargs = {
+        'title': item['title'],
+        'provider_token': '',
+        'currency': 'XTR',
+    }
+    if item['kind'] == 'plan':
+        code = item['plan'].lower()
+        kwargs.update({
+            'description': f'{item["title"]} на 30 дней с автоматическим продлением',
+            'payload': f'clarify_plan:{code}:{user.id}',
+            'prices': [LabeledPrice(label=item['label'], amount=item['price'])],
+            'subscription_period': SUBSCRIPTION_PERIOD_SECONDS,
+        })
+    else:
+        credits = int(item['requests'])
+        kwargs.update({
+            'description': f'{credits} дополнительных AI-запросов. Не сгорают в конце дня.',
+            'payload': f'clarify_pack:{credits}:{user.id}',
+            'prices': [LabeledPrice(label=f'+{credits} запросов', amount=item['price'])],
+        })
+    return await ctx.bot.create_invoice_link(**kwargs)
+
+
 @router.get('/me')
 async def me(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
     ctx = runtime_context(request)
     user = await _user(ctx, tg)
     owner = is_creator(user, ctx.settings)
     used = await ctx.usage.ai_count_today(user.id)
-    limit = None if owner else (ctx.settings.pro_daily_ai_limit if is_active_pro(user) else ctx.settings.free_daily_ai_limit)
+    plan = clarify_plan(user, ctx.settings)
+    limit = plan_daily_ai_limit(user, ctx.settings)
     style = await ctx.styles.get(user.id)
     await ctx.metrics.inc('webapp_open', user.id)
     return {
@@ -138,14 +247,15 @@ async def me(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_
         'first_name': user.first_name or tg.first_name,
         'username': user.username,
         'owner': owner,
-        'plan': 'OWNER' if owner else ('PRO' if is_active_pro(user) else 'FREE'),
+        'plan': plan,
         'pro_until': _dt(user.pro_until),
-        'usage': {'used': used, 'limit': limit},
+        'usage': {'used': used, 'limit': limit, 'bonus': bonus_requests(user)},
         'timezone': user.timezone or ctx.settings.default_timezone,
         'style': style,
         'ai_mode': _settings_json(user).get('clarify_ai_mode', 'fast'),
         'version': ctx.settings.version,
         'pro_price': ctx.settings.pro_stars_price,
+        'max_price': ctx.settings.max_stars_price,
     }
 
 
@@ -187,6 +297,16 @@ async def materials(
     return {'items': [_material_card(item) for item in rows], 'next_cursor': rows[-1].id if has_more and rows else None}
 
 
+@router.delete('/materials')
+async def delete_all_materials(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
+    ctx = runtime_context(request)
+    user = await _user(ctx, tg)
+    count = await ctx.materials.delete_user_materials(user.id)
+    await ctx.conversations.clear(user.id)
+    await ctx.metrics.inc('materials_cleared', user.id, max(1, count))
+    return {'ok': True, 'deleted': count}
+
+
 @router.get('/materials/{material_id}')
 async def material_detail(material_id: int, request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
     ctx = runtime_context(request)
@@ -210,7 +330,7 @@ async def ask_material(material_id: int, body: AskBody, request: Request, tg: Te
     if not item:
         raise HTTPException(404, 'Материал не найден')
     if not await ctx.usage.allowed(user):
-        raise HTTPException(429, 'Дневной лимит AI закончился')
+        raise HTTPException(429, 'Лимит AI закончился. Открой «Тарифы» или докупи пакет запросов.')
     context = await ctx.materials.context(user.id, material_id, body.question)
     try:
         answer, usage = await ctx.ai.ask(body.question, context, model=ctx.settings.smart)
@@ -232,7 +352,7 @@ async def material_action(material_id: int, body: ActionBody, request: Request, 
     if body.action == 'summary':
         return {'answer': item.summary or 'Краткое содержание пока не сохранено.', 'sources': []}
     if not await ctx.usage.allowed(user):
-        raise HTTPException(429, 'Дневной лимит AI закончился')
+        raise HTTPException(429, 'Лимит AI закончился. Открой «Тарифы» или докупи пакет запросов.')
     actions = {
         'main': ('Перечисли самое важное краткими пунктами.', 'главное ключевые факты', False),
         'tasks': ('Перечисли конкретные задачи и следующие действия. Если их нет — скажи это.', 'задача действие обязанность', False),
@@ -319,7 +439,7 @@ async def ask_project(project_id: int, body: AskBody, request: Request, tg: Tele
     if not project:
         raise HTTPException(404, 'Проект не найден')
     if not await ctx.usage.allowed(user):
-        raise HTTPException(429, 'Дневной лимит AI закончился')
+        raise HTTPException(429, 'Лимит AI закончился. Открой «Тарифы» или докупи пакет запросов.')
     parts = []
     sources = []
     for item in items[:12]:
@@ -345,7 +465,7 @@ async def compare(body: CompareBody, request: Request, tg: TelegramWebAppUser = 
     if not first or not second:
         raise HTTPException(404, 'Материал не найден')
     if not await ctx.usage.allowed(user):
-        raise HTTPException(429, 'Дневной лимит AI закончился')
+        raise HTTPException(429, 'Лимит AI закончился. Открой «Тарифы» или докупи пакет запросов.')
     a = await ctx.materials.context(user.id, first.id, 'цена срок обязательства риск отличие', limit=5)
     b = await ctx.materials.context(user.id, second.id, 'цена срок обязательства риск отличие', limit=5)
     answer, usage = await ctx.ai.compare(first.title, a, second.title, b)
@@ -415,7 +535,7 @@ async def compose(body: ComposeBody, request: Request, tg: TelegramWebAppUser = 
     ctx = runtime_context(request)
     user = await _user(ctx, tg)
     if not await ctx.usage.allowed(user):
-        raise HTTPException(429, 'Дневной лимит AI закончился')
+        raise HTTPException(429, 'Лимит AI закончился. Открой «Тарифы» или докупи пакет запросов.')
     style = await ctx.styles.get(user.id)
     answer, usage = await ctx.ai.compose(body.brief, style)
     await ctx.usage.record(user.id, ctx.settings.fast, 'webapp_compose', usage)
@@ -428,7 +548,7 @@ async def rewrite(body: RewriteBody, request: Request, tg: TelegramWebAppUser = 
     ctx = runtime_context(request)
     user = await _user(ctx, tg)
     if not await ctx.usage.allowed(user):
-        raise HTTPException(429, 'Дневной лимит AI закончился')
+        raise HTTPException(429, 'Лимит AI закончился. Открой «Тарифы» или докупи пакет запросов.')
     answer, usage = await ctx.ai.rewrite(body.text, body.mode)
     await ctx.usage.record(user.id, ctx.settings.fast, 'webapp_rewrite', usage)
     return {'answer': answer}
@@ -455,6 +575,8 @@ async def settings_patch(body: SettingsBody, request: Request, tg: TelegramWebAp
     if body.style is not None:
         await ctx.styles.set(user.id, body.style)
     if body.ai_mode in {'fast', 'smart'}:
+        if body.ai_mode == 'smart' and clarify_plan(user, ctx.settings) == 'FREE':
+            raise HTTPException(403, 'Smart AI доступен в PRO и PRO MAX')
         async with ctx.db.sessions() as db:
             row = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
             data = _settings_json(row)
@@ -464,16 +586,39 @@ async def settings_patch(body: SettingsBody, request: Request, tg: TelegramWebAp
     return {'ok': True}
 
 
+@router.get('/plans')
+async def plans(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
+    ctx = runtime_context(request)
+    user = await _user(ctx, tg)
+    await ctx.metrics.inc('plans_open', user.id)
+    return {
+        'current': clarify_plan(user, ctx.settings),
+        'pro_until': _dt(user.pro_until),
+        'bonus_requests': bonus_requests(user),
+        'plans': list(_catalog(ctx.settings).values()),
+        'packs': _packs(ctx.settings),
+        'note': 'Дополнительные запросы начинают расходоваться только после дневного лимита тарифа.',
+    }
+
+
+@router.post('/plans/invoice')
+async def plans_invoice(body: PlanInvoiceBody, request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
+    ctx = runtime_context(request)
+    user = await _user(ctx, tg)
+    link = await _invoice_link(ctx, user, body.product)
+    await ctx.metrics.inc('plans_purchase_click', user.id)
+    return {'invoice_url': link}
+
+
 @router.get('/pro')
 async def pro(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
     ctx = runtime_context(request)
     user = await _user(ctx, tg)
-    owner = is_creator(user, ctx.settings)
     await ctx.metrics.inc('pro_page_open', user.id)
     return {
-        'owner': owner,
-        'active': owner or is_active_pro(user),
-        'plan': 'OWNER' if owner else ('PRO' if is_active_pro(user) else 'FREE'),
+        'owner': is_creator(user, ctx.settings),
+        'active': is_creator(user, ctx.settings) or is_active_pro(user),
+        'plan': clarify_plan(user, ctx.settings),
         'price': ctx.settings.pro_stars_price,
         'pro_until': _dt(user.pro_until),
     }
@@ -483,17 +628,7 @@ async def pro(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp
 async def pro_invoice(request: Request, tg: TelegramWebAppUser = Depends(telegram_webapp_user)):
     ctx = runtime_context(request)
     user = await _user(ctx, tg)
-    if is_creator(user, ctx.settings):
-        raise HTTPException(400, 'OWNER уже имеет Unlimited-доступ')
-    link = await ctx.bot.create_invoice_link(
-        title='Clarify PRO',
-        description='PRO на 30 дней с автоматическим продлением',
-        payload=f'razberi_pro:{user.id}',
-        provider_token='',
-        currency='XTR',
-        prices=[LabeledPrice(label='Clarify PRO · 30 дней', amount=ctx.settings.pro_stars_price)],
-        subscription_period=SUBSCRIPTION_PERIOD_SECONDS,
-    )
+    link = await _invoice_link(ctx, user, 'pro')
     await ctx.metrics.inc('pro_purchase_click', user.id)
     return {'invoice_url': link}
 
