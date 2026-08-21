@@ -61,11 +61,18 @@ async def _deliver(request: Request, tg: TelegramWebAppUser, *, kind: str, messa
     try:
         await ctx.bot.send_message(admin_id, text, parse_mode='HTML')
         if screenshot:
-            photo = BufferedInputFile(screenshot, filename=filename or 'screenshot.jpg')
             try:
-                await ctx.bot.send_photo(admin_id, photo, caption=f'📎 Скриншот к обращению от {tg.id}')
+                await ctx.bot.send_photo(
+                    admin_id,
+                    BufferedInputFile(screenshot, filename=filename or 'screenshot.jpg'),
+                    caption=f'📎 Скриншот к обращению от {tg.id}',
+                )
             except Exception:
-                await ctx.bot.send_document(admin_id, photo, caption=f'📎 Вложение к обращению от {tg.id}')
+                await ctx.bot.send_document(
+                    admin_id,
+                    BufferedInputFile(screenshot, filename=filename or 'screenshot.jpg'),
+                    caption=f'📎 Вложение к обращению от {tg.id}',
+                )
         await ctx.metrics.inc('support_submitted', user.id)
     except Exception as exc:
         await ctx.errors.record(request_id, tg.id, 'support_submit', exc)
@@ -100,6 +107,8 @@ async def support_submit_with_file(
     if not (file.content_type or '').startswith('image/'):
         raise HTTPException(400, 'Для обращения можно приложить изображение или скриншот.')
     data = await file.read(8 * 1024 * 1024 + 1)
+    if not data:
+        raise HTTPException(400, 'Скриншот пустой. Выбери изображение ещё раз.')
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(413, 'Скриншот слишком большой. Максимум 8 МБ.')
     safe_kind = kind if kind in CATEGORY_LABELS else 'other'
