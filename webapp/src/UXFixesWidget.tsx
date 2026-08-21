@@ -12,6 +12,13 @@ type SearchItem = {
 
 type SearchResult = { items: SearchItem[] }
 
+const formatDate = (value?: string | null) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 function ensureSourceHost(details: Element | null) {
   if (!details) return null
   let host = details.querySelector('#clarify-source-media-host') as HTMLElement | null
@@ -63,14 +70,18 @@ export default function UXFixesWidget() {
   useAiAnswerAutoScroll()
   const [sourceHost, setSourceHost] = useState<HTMLElement | null>(null)
   const [sourceTitle, setSourceTitle] = useState('')
+  const [sourceMeta, setSourceMeta] = useState('')
   const [hasImage, setHasImage] = useState(false)
 
   useEffect(() => {
     if (!hasTelegramAuth()) return
     const scan = () => {
-      const detailTitle = document.querySelector('.v1-detail-title h1')?.textContent?.trim() || ''
+      const detail = document.querySelector('.v1-detail-title')
+      const detailTitle = detail?.querySelector('h1')?.textContent?.trim() || ''
+      const detailMeta = detail?.querySelector('small')?.textContent?.trim() || ''
       const details = document.querySelector('.v1-source')
       setSourceTitle(detailTitle)
+      setSourceMeta(detailMeta)
       setSourceHost(ensureSourceHost(details))
     }
     scan()
@@ -81,7 +92,7 @@ export default function UXFixesWidget() {
 
   useEffect(() => {
     setHasImage(false)
-  }, [sourceTitle, sourceHost])
+  }, [sourceTitle, sourceMeta, sourceHost])
 
   useEffect(() => {
     const details = sourceHost?.closest('.v1-source')
@@ -91,10 +102,13 @@ export default function UXFixesWidget() {
   }, [sourceHost, hasImage])
 
   if (!hasTelegramAuth() || !sourceHost || !sourceTitle) return null
-  return createPortal(<SourceImagePreview title={sourceTitle} onAvailable={setHasImage} />, sourceHost)
+  return createPortal(
+    <SourceImagePreview title={sourceTitle} meta={sourceMeta} onAvailable={setHasImage} />,
+    sourceHost,
+  )
 }
 
-function SourceImagePreview({ title, onAvailable }: { title: string; onAvailable: (value: boolean) => void }) {
+function SourceImagePreview({ title, meta, onAvailable }: { title: string; meta: string; onAvailable: (value: boolean) => void }) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -109,9 +123,13 @@ function SourceImagePreview({ title, onAvailable }: { title: string; onAvailable
       try {
         const search = await api<SearchResult>(`/api/copilot/search?q=${encodeURIComponent(title)}&limit=8`)
         if (!alive) return
-        const image = search.items.find(item =>
+        const exactImages = search.items.filter(item =>
           item.title.trim() === title.trim() && ['image', 'screenshot'].includes(item.type),
         )
+        const image = exactImages.find(item => {
+          const renderedDate = formatDate(item.created_at)
+          return renderedDate && meta.includes(renderedDate)
+        }) || exactImages[0]
         if (!image) {
           setLoading(false)
           return
@@ -144,7 +162,7 @@ function SourceImagePreview({ title, onAvailable }: { title: string; onAvailable
       onAvailable(false)
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [title, onAvailable])
+  }, [title, meta, onAvailable])
 
   if (!loading && !url) return null
   return <div className="clarify-source-media">
