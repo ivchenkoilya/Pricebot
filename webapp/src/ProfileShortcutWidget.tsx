@@ -21,10 +21,23 @@ export default function ProfileShortcutWidget() {
       setProfileButton(profile)
     }
 
+    const openPlansFromBadge = (event: MouseEvent) => {
+      const target = event.target as Element | null
+      if (!target?.closest('.v1-plan')) return
+      event.preventDefault()
+      event.stopPropagation()
+      haptic()
+      window.dispatchEvent(new Event('clarify:open-plans'))
+    }
+
     find()
     const observer = new MutationObserver(find)
     observer.observe(document.body, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    document.addEventListener('click', openPlansFromBadge, true)
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('click', openPlansFromBadge, true)
+    }
   }, [])
 
   if (!hasTelegramAuth() || !topbar) return null
