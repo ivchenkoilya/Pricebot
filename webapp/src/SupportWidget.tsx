@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { Bug, Check, Image as ImageIcon, LifeBuoy, Lightbulb, MessageCircle, Send, X } from 'lucide-react'
 import { api, apiForm, haptic, hasTelegramAuth, successHaptic } from './api'
 
@@ -19,15 +19,6 @@ export default function SupportWidget() {
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    const tg = window.Telegram?.WebApp
-    if (!tg?.BackButton || !open) return
-    const close = () => setOpen(false)
-    tg.BackButton.show()
-    tg.BackButton.onClick(close)
-    return () => tg.BackButton?.offClick(close)
-  }, [open])
 
   if (!hasTelegramAuth()) return null
 
