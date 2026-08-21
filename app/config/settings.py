@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '0.9.0'
+    version: str = '0.9.1'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -80,13 +80,20 @@ class Settings(BaseSettings):
     # datacenter IP of Amvera. Example: http://user:pass@proxy.example:8080
     media_proxy_url: str = ''
 
-    # Speech-to-text
+    # Speech-to-text. Speed is the default priority for Telegram voice notes.
+    # tiny + int8 + two long-audio workers is dramatically faster on Amvera CPU
+    # than the previous serial base-model transcription.
     stt_provider: str = 'local'
-    whisper_model: str = 'base'
-    stt_remote_model: str = 'whisper-1'
-    stt_remote_timeout: float = 25.0
+    whisper_model: str = 'tiny'
     whisper_compute_type: str = 'int8'
+    whisper_cpu_threads: int = 2
+    whisper_num_workers: int = 2
+    whisper_parallel_chunks: int = 2
+    whisper_parallel_threshold_seconds: int = 240
+    whisper_chunk_seconds: int = 300
     whisper_cache_dir: str = ''
+    stt_remote_model: str = 'whisper-1'
+    stt_remote_timeout: float = 120.0
 
     # Concurrency / privacy
     max_ai_concurrency: int = 4
