@@ -91,11 +91,12 @@ class Settings(BaseSettings):
     # datacenter IP of Amvera. Example: http://user:pass@proxy.example:8080
     media_proxy_url: str = ''
 
-    # Speech-to-text. Speed is the default priority for Telegram voice notes.
-    # tiny + int8 + two long-audio workers is dramatically faster on Amvera CPU
-    # than the previous serial base-model transcription.
+    # Speech-to-text. Russian conversational accuracy is the default priority.
+    # `base` is still practical on CPU, but is noticeably more reliable than
+    # `tiny` for names, slang, dates and noisy Telegram voice notes.
     stt_provider: str = 'local'
-    whisper_model: str = 'tiny'
+    whisper_model: str = 'base'
+    whisper_quality_floor: bool = True
     whisper_compute_type: str = 'int8'
     whisper_cpu_threads: int = 2
     whisper_num_workers: int = 2
@@ -190,6 +191,16 @@ class Settings(BaseSettings):
         return self.vision_model.strip() or self.smart_model.strip() or self.openai_model.strip()
 
     @property
+    def resolved_whisper_model(self) -> str:
+        model = self.whisper_model.strip() or 'base'
+        # Existing Amvera environments may still explicitly contain
+        # WHISPER_MODEL=tiny. Keep a quality floor by default so an old env value
+        # cannot silently bring back the low-quality transcript problem.
+        if self.whisper_quality_floor and model.lower() in {'tiny', 'tiny.en'}:
+            return 'base'
+        return model
+
+    @property
     def disabled_provider_set(self) -> set[str]:
         return {item.strip().lower() for item in self.disabled_providers.split(',') if item.strip()}
 
@@ -213,6 +224,7 @@ class Settings(BaseSettings):
         base = Path(self.data_dir)
         base.mkdir(parents=True, exist_ok=True)
         (base / 'tmp').mkdir(parents=True, exist_ok=True)
+        (base / 'materials').mkdir(parents=True, exist_ok=True)
         Path(self.resolved_whisper_cache_dir).mkdir(parents=True, exist_ok=True)
         Path(self.resolved_media_temp_dir).mkdir(parents=True, exist_ok=True)
 
