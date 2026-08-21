@@ -1,0 +1,10 @@
+.v1-hero>img{
+  aspect-ratio:16/8.6;
+  object-fit:contain;
+  object-position:center;
+  background:#050d1d;
+}
+
+@media(max-width:520px){
+  .v1-hero>img{aspect-ratio:16/8.6;object-fit:contain}
+}
