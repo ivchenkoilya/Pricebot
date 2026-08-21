@@ -1,10 +1,10 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useState, type ReactNode } from 'react'
 import { Bug, Check, Image as ImageIcon, LifeBuoy, Lightbulb, MessageCircle, Send, X } from 'lucide-react'
 import { api, apiForm, haptic, hasTelegramAuth, successHaptic } from './api'
 
 type Kind = 'bug' | 'idea' | 'question' | 'other'
 
-const options: Array<{ id: Kind; icon: React.ReactNode; title: string; text: string }> = [
+const options: Array<{ id: Kind; icon: ReactNode; title: string; text: string }> = [
   { id: 'bug', icon: <Bug />, title: 'Сообщить об ошибке', text: 'Что сломалось или работает не так' },
   { id: 'idea', icon: <Lightbulb />, title: 'Предложить идею', text: 'Что стоит добавить или улучшить' },
   { id: 'question', icon: <LifeBuoy />, title: 'Нужна помощь', text: 'Вопрос по работе Clarify' },
