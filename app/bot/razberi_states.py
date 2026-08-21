@@ -23,3 +23,7 @@ class ProjectCreate(StatesGroup):
 
 class StyleSetup(StatesGroup):
     waiting_profile = State()
+
+
+class SupportMessage(StatesGroup):
+    waiting = State()
