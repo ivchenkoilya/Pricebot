@@ -91,12 +91,13 @@ class Settings(BaseSettings):
     # datacenter IP of Amvera. Example: http://user:pass@proxy.example:8080
     media_proxy_url: str = ''
 
-    # Speech-to-text. Set STT_PROVIDER=yandex to use SpeechKit v3 and keep local
-    # Whisper as an automatic fallback if the cloud request is temporarily down.
+    # Speech-to-text. For the normal Russian Yandex Cloud region the endpoint is
+    # fixed here, so Amvera only needs provider + API key + folder ID.
     stt_provider: str = 'local'
     yandex_speechkit_api_key: str = ''
     yandex_speechkit_folder_id: str = ''
-    yandex_speechkit_endpoint: str = 'https://stt.api.ml.yandexcloud.kz'
+    yandex_speechkit_endpoint: str = 'https://stt.api.cloud.yandex.net'
+    yandex_speechkit_operation_endpoint: str = 'https://operation.api.cloud.yandex.net'
     yandex_speechkit_model: str = 'general'
     yandex_speechkit_timeout: float = 300.0
     yandex_speechkit_poll_interval: float = 1.0
@@ -203,9 +204,6 @@ class Settings(BaseSettings):
     @property
     def resolved_whisper_model(self) -> str:
         model = self.whisper_model.strip() or 'base'
-        # Existing Amvera environments may still explicitly contain
-        # WHISPER_MODEL=tiny. Keep a quality floor by default so an old env value
-        # cannot silently bring back the low-quality transcript problem.
         if self.whisper_quality_floor and model.lower() in {'tiny', 'tiny.en'}:
             return 'base'
         return model
