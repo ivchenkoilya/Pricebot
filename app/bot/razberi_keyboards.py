@@ -61,7 +61,12 @@ def plans_keyboard(settings) -> InlineKeyboardMarkup:
 
 
 def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = [
+    type_low = (material_type or '').lower()
+    rows: list[list[InlineKeyboardButton]] = []
+    if type_low == 'video':
+        rows.append([InlineKeyboardButton(text='⭕ Сделать кружок', callback_data=f'circle:{material_id}')])
+
+    rows += [
         [
             InlineKeyboardButton(text='⚡ Кратко', callback_data=f'mat:{material_id}:summary'),
             InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'),
@@ -71,13 +76,12 @@ def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
             InlineKeyboardButton(text='✅ Что делать', callback_data=f'mat:{material_id}:tasks'),
         ],
     ]
-    type_low = (material_type or '').lower()
     if type_low in {'pdf', 'docx', 'txt', 'md', 'xlsx', 'csv', 'document'}:
         rows += [
             [InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'), InlineKeyboardButton(text='💰 Деньги', callback_data=f'mat:{material_id}:money')],
             [InlineKeyboardButton(text='📅 Сроки', callback_data=f'mat:{material_id}:dates'), InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')],
         ]
-    elif type_low in {'voice', 'audio', 'forwarded'}:
+    elif type_low in {'voice', 'audio', 'forwarded', 'video', 'video_note'}:
         rows += [
             [InlineKeyboardButton(text='🎯 Что от меня хотят?', callback_data=f'mat:{material_id}:wants'), InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply')],
             [InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'), InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')],
