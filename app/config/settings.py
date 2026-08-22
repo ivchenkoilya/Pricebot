@@ -157,6 +157,22 @@ class Settings(BaseSettings):
             return None
         return int(value)
 
+    @field_validator('pro_voice_max_seconds', mode='before')
+    @classmethod
+    def cap_pro_voice_length(cls, value):
+        """PRO may never exceed 30 minutes even if Amvera still has an older override."""
+        if value in ('', None):
+            return 1800
+        return min(1800, max(1, int(value)))
+
+    @field_validator('pro_document_max_pages', mode='before')
+    @classmethod
+    def cap_pro_document_pages(cls, value):
+        """PRO may never exceed 100 pages even if Amvera still has an older override."""
+        if value in ('', None):
+            return 100
+        return min(100, max(1, int(value)))
+
     @field_validator('webapp_url', mode='before')
     @classmethod
     def normalize_amvera_webapp_url(cls, value):
