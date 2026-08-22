@@ -181,50 +181,57 @@ class Settings(BaseSettings):
 
     @property
     def fast(self) -> str:
-        return (self.fast_model or self.openai_model).strip()
+        return self.fast_model.strip() or self.openai_model.strip()
 
     @property
     def smart(self) -> str:
-        return (self.smart_model or self.openai_model).strip()
+        return self.smart_model.strip() or self.openai_model.strip()
 
     @property
     def vision(self) -> str:
-        return (self.vision_model or self.smart_model or self.openai_model).strip()
+        return self.vision_model.strip() or self.smart_model.strip() or self.openai_model.strip()
 
     @property
     def resolved_whisper_model(self) -> str:
         model = self.whisper_model.strip() or 'base'
+        # Existing Amvera environments may still explicitly contain
+        # WHISPER_MODEL=tiny. Keep a quality floor by default so an old env value
+        # cannot silently bring back the low-quality transcript problem.
         if self.whisper_quality_floor and model.lower() in {'tiny', 'tiny.en'}:
             return 'base'
         return model
 
     @property
-    def resolved_whisper_cache_dir(self) -> str:
-        if self.whisper_cache_dir.strip():
-            return self.whisper_cache_dir.strip()
-        return str(Path(self.data_dir) / 'whisper-cache')
-
-    @property
-    def resolved_media_temp_dir(self) -> str:
-        if self.media_temp_dir.strip():
-            return self.media_temp_dir.strip()
-        return str(Path(self.data_dir) / 'tmp' / 'media')
-
-    @property
-    def ai_available(self) -> bool:
-        return bool(self.ai_enabled and self.openai_api_key.strip())
+    def disabled_provider_set(self) -> set[str]:
+        return {item.strip().lower() for item in self.disabled_providers.split(',') if item.strip()}
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [item.strip() for item in self.webapp_cors_origins.split(',') if item.strip()]
+        return [item.strip().rstrip('/') for item in self.webapp_cors_origins.split(',') if item.strip()]
+
+    @property
+    def ai_available(self) -> bool:
+        return bool(self.ai_enabled and self.openai_api_key.strip() and self.openai_model.strip())
+
+    @property
+    def ai_uses_custom_endpoint(self) -> bool:
+        return bool(self.openai_base_url.strip())
+
+    @property
+    def resolved_media_temp_dir(self) -> str:
+        return self.media_temp_dir or str(Path(self.data_dir) / 'tmp' / 'media')
 
     def ensure_dirs(self) -> None:
         base = Path(self.data_dir)
         base.mkdir(parents=True, exist_ok=True)
         (base / 'tmp').mkdir(parents=True, exist_ok=True)
-        (base / 'tmp' / 'media').mkdir(parents=True, exist_ok=True)
-        (base / 'whisper-cache').mkdir(parents=True, exist_ok=True)
         (base / 'materials').mkdir(parents=True, exist_ok=True)
+        Path(self.resolved_whisper_cache_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.resolved_media_temp_dir).mkdir(parents=True, exist_ok=True)
+
+    @property
+    def resolved_whisper_cache_dir(self) -> str:
+        return self.whisper_cache_dir or str(Path(self.data_dir) / 'whisper-cache')
 
 
 @lru_cache(maxsize=1)
