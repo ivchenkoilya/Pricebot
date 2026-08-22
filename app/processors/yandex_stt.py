@@ -23,7 +23,7 @@ class YandexSpeechKitProvider:
     The Kazakhstan Yandex Cloud region exposes SpeechKit STT through API v3.
     Clarify converts Telegram/video audio to compact mono OGG Opus and sends it
     directly in the request body. This keeps a one-hour recording comfortably
-    below the API v3 60 MB request-body limit in normal conditions.
+    below the API v3 request-body limit in normal conditions.
     """
 
     def __init__(self, settings: Settings, fallback=None):
@@ -53,8 +53,8 @@ class YandexSpeechKitProvider:
         folder = tempfile.mkdtemp(prefix='clarify-yandex-stt-', dir=temp_root)
         output = str(Path(folder) / 'speech.ogg')
 
-        # SpeechKit v3 accepts OGG_OPUS. 64 kbps mono is transparent enough for
-        # speech recognition while keeping long Telegram recordings compact.
+        # SpeechKit v3 accepts OGG_OPUS. 64 kbps mono keeps long Telegram
+        # recordings compact without throwing away speech detail.
         import subprocess
 
         command = [
@@ -76,37 +76,42 @@ class YandexSpeechKitProvider:
 
     @staticmethod
     def _extract_text_items(raw: str) -> list[dict]:
+        """Parse SpeechKit REST v3's sequence of JSON result messages."""
         raw = (raw or '').strip()
         if not raw:
             return []
-        try:
-            value = json.loads(raw)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-            if isinstance(value, dict):
-                return [value]
-        except json.JSONDecodeError:
-            pass
 
-        # Some SpeechKit gateway responses are newline-delimited JSON messages.
-        items: list[dict] = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        decoder = json.JSONDecoder()
+        index = 0
+        messages: list[dict] = []
+        while index < len(raw):
+            while index < len(raw) and raw[index].isspace():
+                index += 1
+            if index >= len(raw):
+                break
             try:
-                value = json.loads(line)
+                value, index = decoder.raw_decode(raw, index)
             except json.JSONDecodeError:
+                # Be tolerant of gateways that add an unexpected separator.
+                next_brace = raw.find('{', index + 1)
+                if next_brace < 0:
+                    break
+                index = next_brace
                 continue
-            if isinstance(value, dict):
-                items.append(value)
-        return items
+
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if not isinstance(item, dict):
+                    continue
+                result = item.get('result')
+                messages.append(result if isinstance(result, dict) else item)
+        return messages
 
     @staticmethod
     def _best_transcript(messages: list[dict]) -> str:
         finals: dict[int, str] = {}
         refinements: dict[int, str] = {}
-        fallback_finals: list[str] = []
+        next_final_index = 0
 
         for message in messages:
             final = message.get('final') or {}
@@ -114,12 +119,18 @@ class YandexSpeechKitProvider:
             if alternatives and isinstance(alternatives[0], dict):
                 text = str(alternatives[0].get('text') or '').strip()
                 if text:
+                    cursor = message.get('audioCursors') or {}
+                    raw_index = cursor.get('finalIndex')
                     try:
-                        index = int((message.get('audioCursors') or {}).get('finalIndex') or len(finals))
+                        final_index = int(raw_index) if raw_index is not None else next_final_index
                     except (TypeError, ValueError):
-                        index = len(finals)
-                    finals[index] = text
-                    fallback_finals.append(text)
+                        final_index = next_final_index
+                    # The cursor can refer to the most recent final; ensure later
+                    # independent finals do not overwrite earlier phrases.
+                    while final_index in finals and finals[final_index] != text:
+                        final_index += 1
+                    finals[final_index] = text
+                    next_final_index = max(next_final_index, final_index + 1)
 
             refinement = message.get('finalRefinement') or {}
             normalized = refinement.get('normalizedText') or {}
@@ -128,18 +139,13 @@ class YandexSpeechKitProvider:
                 text = str(alternatives[0].get('text') or '').strip()
                 if text:
                     try:
-                        index = int(refinement.get('finalIndex') or 0)
+                        final_index = int(refinement.get('finalIndex') or 0)
                     except (TypeError, ValueError):
-                        index = 0
-                    refinements[index] = text
+                        final_index = 0
+                    refinements[final_index] = text
 
-        if refinements or finals:
-            indexes = sorted(set(finals) | set(refinements))
-            parts = [refinements.get(index) or finals.get(index) or '' for index in indexes]
-            text = ' '.join(part for part in parts if part).strip()
-            if text:
-                return text
-        return ' '.join(fallback_finals).strip()
+        indexes = sorted(set(finals) | set(refinements))
+        return ' '.join(refinements.get(i) or finals.get(i) or '' for i in indexes).strip()
 
     async def _recognize_yandex(self, path: str, language: str) -> str:
         if not self.settings.yandex_speechkit_api_key.strip():
@@ -155,22 +161,25 @@ class YandexSpeechKitProvider:
                 lambda: base64.b64encode(Path(ogg_path).read_bytes()).decode('ascii')
             )
             lang = 'ru-RU' if language.lower().startswith('ru') else language
+
+            # Yandex's current KZ practical guide uses protobuf field names in
+            # snake_case for REST v3 requests.
             payload = {
                 'content': encoded,
-                'recognitionModel': {
+                'recognition_model': {
                     'model': self.settings.yandex_speechkit_model,
-                    'audioFormat': {
-                        'containerAudio': {'containerAudioType': 'OGG_OPUS'},
+                    'audio_format': {
+                        'container_audio': {'container_audio_type': 'OGG_OPUS'},
                     },
-                    'textNormalization': {
-                        'textNormalization': 'TEXT_NORMALIZATION_ENABLED',
-                        'profanityFilter': False,
-                        'literatureText': False,
-                        'phoneFormattingMode': 'PHONE_FORMATTING_MODE_DISABLED',
+                    'text_normalization': {
+                        'text_normalization': 'TEXT_NORMALIZATION_ENABLED',
+                        'profanity_filter': False,
+                        'literature_text': False,
+                        'phone_formatting_mode': 'PHONE_FORMATTING_MODE_DISABLED',
                     },
-                    'languageRestriction': {
-                        'restrictionType': 'WHITELIST',
-                        'languageCode': [lang],
+                    'language_restriction': {
+                        'restriction_type': 'WHITELIST',
+                        'language_code': [lang],
                     },
                 },
             }
@@ -214,7 +223,7 @@ class YandexSpeechKitProvider:
                 result_response = await client.get(
                     f'{self._base_url}/stt/v3/getRecognition',
                     headers=self._headers,
-                    params={'operationId': operation_id},
+                    params={'operation_id': operation_id},
                 )
                 result_response.raise_for_status()
                 messages = self._extract_text_items(result_response.text)
