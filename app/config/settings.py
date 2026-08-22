@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = 'Clarify'
-    version: str = '1.2.0'
+    version: str = '1.3.0'
     bot_token: str = ''
     admin_telegram_id: int | None = None
     test_mode: bool = True
@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     pro_document_max_pages: int = 100
     max_document_max_pages: int = 200
     max_file_size_mb: int = 25
+
+    # Growth / referrals. Bonus is awarded only after the referred user completes
+    # a successful AI operation and is stored in the same bonus balance used by
+    # one-time request packs.
+    referral_bonus_requests: int = 20
 
     # One-time request packs. They are spent only after the daily plan allowance is exhausted.
     request_pack_100_stars: int = 99
