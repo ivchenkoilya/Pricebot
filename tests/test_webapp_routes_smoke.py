@@ -1,16 +1,25 @@
 import pytest
 
 import main
-from app.webapp import webapp_api_router
+from app.webapp.api import router as core_router
+from app.webapp.copilot import router as copilot_router
+from app.webapp.memory import router as memory_router
+
+
+def _paths(router):
+    return {path for route in router.routes if (path := getattr(route, 'path', None))}
 
 
 def test_webapp_routes_are_registered():
-    api_paths = {path for route in webapp_api_router.routes if (path := getattr(route, 'path', None))}
-    assert '/api/me' in api_paths
-    assert '/api/materials' in api_paths
-    assert '/api/compare' in api_paths
-    assert '/api/reminders' in api_paths
-    assert '/api/pro/invoice' in api_paths
+    core_paths = _paths(core_router)
+    assert '/api/me' in core_paths
+    assert '/api/materials' in core_paths
+    assert '/api/compare' in core_paths
+    assert '/api/reminders' in core_paths
+    assert '/api/pro/invoice' in core_paths
+
+    assert '/api/memory/ask' in _paths(memory_router)
+    assert _paths(copilot_router)
 
     app_paths = {path for route in main.app.routes if (path := getattr(route, 'path', None))}
     assert '/app' in app_paths
