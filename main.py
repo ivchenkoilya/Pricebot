@@ -149,18 +149,26 @@ async def main() -> None:
                 await ctx.errors.record(f'reminder-{reminder.id}', telegram_id, 'reminder_send', exc)
 
     async def prewarm_stt() -> None:
+        provider = (settings.stt_provider or 'local').strip().lower()
         try:
             await ctx.stt.prewarm()
-            log.info(
-                'Fast STT ready model=%s workers=%s chunks=%s',
-                settings.whisper_model,
-                settings.whisper_num_workers,
-                settings.whisper_parallel_chunks,
-            )
+            if provider == 'yandex':
+                log.info(
+                    'STT ready provider=yandex speechkit_key=%s folder_id=%s fallback_local=%s',
+                    'set' if settings.yandex_speechkit_api_key.strip() else 'missing',
+                    'set' if settings.yandex_speechkit_folder_id.strip() else 'missing',
+                    settings.yandex_speechkit_fallback_local,
+                )
+            else:
+                log.info(
+                    'STT ready provider=%s model=%s workers=%s chunks=%s',
+                    provider,
+                    settings.whisper_model,
+                    settings.whisper_num_workers,
+                    settings.whisper_parallel_chunks,
+                )
         except Exception as exc:
-            # Do not block the bot if HuggingFace/model cache is temporarily slow.
-            # The provider will retry lazily on the first voice note.
-            log.warning('STT prewarm failed: %s', exc)
+            log.warning('STT prewarm failed provider=%s: %s', provider, exc)
 
     scheduler.add_job(send_due_reminders, 'interval', seconds=20, max_instances=1, coalesce=True)
     scheduler.add_job(ctx.materials.cleanup_expired, 'cron', hour=4, minute=10, max_instances=1, coalesce=True)
