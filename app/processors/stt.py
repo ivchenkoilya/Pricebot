@@ -23,12 +23,12 @@ class SpeechToTextProvider:
 
 
 class LocalWhisperProvider(SpeechToTextProvider):
-    """Low-latency faster-whisper provider for Telegram audio.
+    """Adaptive faster-whisper provider for Clarify.
 
-    Short voice notes keep the stronger multilingual ``base`` model. Long audio
-    automatically switches to a much lighter model, uses greedy decoding and is
-    split into short chunks. CPU settings are also capped by the container's
-    cgroup quota so Amvera is not slowed down by thread oversubscription.
+    Accuracy is deliberately prioritised for short Telegram voice notes, video
+    notes and short videos: those use the multilingual ``small`` model with a
+    wider beam. Long recordings still switch to the lightweight model configured
+    in settings so a 10–60 minute file does not pin a small Amvera CPU forever.
     """
 
     _models: dict[tuple[str, str, str, int, int], object] = {}
@@ -58,8 +58,6 @@ class LocalWhisperProvider(SpeechToTextProvider):
             return requested_threads, requested_workers
 
         workers = min(requested_workers, cpu_limit)
-        # cpu_threads are per CTranslate2 worker. Split the real CPU allowance
-        # between workers instead of accidentally requesting 4 threads on 2 CPU.
         threads = min(requested_threads, max(1, cpu_limit // workers))
         return threads, workers
 
@@ -100,32 +98,9 @@ class LocalWhisperProvider(SpeechToTextProvider):
         return self.__class__._models[key]
 
     async def prewarm(self) -> None:
-        # Preload the normal short-message model in the background at startup.
-        await self._get_model(self.settings.resolved_whisper_model)
-
-    def _transcribe_sync(self, model, path: str, language: str) -> str:
-        initial_prompt = None
-        if language.lower().startswith('ru'):
-            initial_prompt = 'Русская разговорная речь. Сохраняй имена, числа, даты, сленг и разговорные выражения.'
-
-        beam_size = max(1, int(self.settings.whisper_beam_size or 1))
-        segments, _info = model.transcribe(
-            path,
-            language=language,
-            vad_filter=True,
-            vad_parameters={
-                'min_silence_duration_ms': 400,
-                'speech_pad_ms': 200,
-            },
-            beam_size=beam_size,
-            best_of=1,
-            temperature=0.0,
-            condition_on_previous_text=self.settings.whisper_condition_on_previous_text,
-            initial_prompt=initial_prompt,
-            without_timestamps=True,
-            word_timestamps=False,
-        )
-        return ' '.join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
+        # Most real Telegram messages are short. Warm the accuracy model first so
+        # the first user does not wait for it to load after deployment.
+        await self._get_model('small')
 
     @staticmethod
     def _duration_seconds(path: str) -> float:
@@ -144,18 +119,46 @@ class LocalWhisperProvider(SpeechToTextProvider):
         except Exception:
             return 0.0
 
+    def _prepare_audio(self, path: str) -> tuple[str | None, str | None]:
+        """Make speech easier to hear without touching the user's source file.
+
+        Telegram/video audio can be quiet, boomy or noisy. A small high/low-pass
+        plus dynamic normalisation usually helps Whisper on phone recordings and
+        factory/background noise. If ffmpeg rejects the filter we simply fall
+        back to the original input.
+        """
+        temp_root = Path(self.settings.data_dir) / 'tmp'
+        temp_root.mkdir(parents=True, exist_ok=True)
+        folder = tempfile.mkdtemp(prefix='clarify-stt-clean-', dir=temp_root)
+        output = str(Path(folder) / 'speech.wav')
+        command = [
+            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
+            '-i', path,
+            '-vn', '-ac', '1', '-ar', '16000',
+            '-af', 'highpass=f=70,lowpass=f=7800,dynaudnorm=f=200:g=7:p=0.95',
+            '-c:a', 'pcm_s16le',
+            output,
+        ]
+        try:
+            subprocess.run(command, capture_output=True, timeout=30, check=True)
+            if Path(output).exists() and Path(output).stat().st_size > 1000:
+                return folder, output
+        except Exception:
+            pass
+        shutil.rmtree(folder, ignore_errors=True)
+        return None, None
+
     def _split_long_audio(self, path: str) -> tuple[str, list[str]]:
         temp_root = Path(self.settings.data_dir) / 'tmp'
         temp_root.mkdir(parents=True, exist_ok=True)
         folder = tempfile.mkdtemp(prefix='clarify-stt-', dir=temp_root)
         pattern = str(Path(folder) / 'chunk_%03d.wav')
-        # Clamp old Amvera env values too: previous deployments used 300s
-        # chunks, which made every progress step feel frozen for minutes.
         chunk_seconds = min(120, max(60, int(self.settings.whisper_chunk_seconds)))
         command = [
             'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
             '-i', path,
             '-vn', '-ac', '1', '-ar', '16000',
+            '-af', 'highpass=f=70,lowpass=f=7800,dynaudnorm=f=200:g=7:p=0.95',
             '-c:a', 'pcm_s16le',
             '-f', 'segment', '-segment_time', str(chunk_seconds), '-reset_timestamps', '1',
             pattern,
@@ -175,15 +178,79 @@ class LocalWhisperProvider(SpeechToTextProvider):
         fast_model = (self.settings.whisper_long_model or '').strip()
         if fast_model and duration >= long_after:
             return fast_model
-        return self.settings.resolved_whisper_model
+        # ``small`` is a large step up from base/tiny on short colloquial Russian,
+        # especially when the clip contains slang or background noise.
+        return 'small'
+
+    @staticmethod
+    def _decode_profile(duration: float, model_name: str, long_model: str) -> tuple[int, bool, bool]:
+        is_long_model = bool(long_model and model_name == long_model)
+        if is_long_model:
+            return 1, False, True
+        if duration <= 45:
+            # Short messages are cheap enough to decode carefully. Disabling VAD
+            # here also avoids clipping a single short phrase such as "чёрт возьми".
+            return 5, True, False
+        if duration <= 180:
+            return 3, True, True
+        return 2, False, True
+
+    @staticmethod
+    def _transcribe_sync(
+        model,
+        path: str,
+        language: str,
+        beam_size: int,
+        condition_on_previous_text: bool,
+        vad_filter: bool,
+    ) -> tuple[str, float]:
+        initial_prompt = None
+        if language.lower().startswith('ru'):
+            initial_prompt = (
+                'Точная дословная расшифровка русской разговорной речи. '
+                'Сохраняй обычные русские слова, имена, числа, сленг и междометия. '
+                'Не выдумывай необычные слова, если слышна нормальная русская фраза.'
+            )
+
+        kwargs = dict(
+            language=language,
+            vad_filter=vad_filter,
+            beam_size=max(1, beam_size),
+            best_of=1,
+            temperature=0.0,
+            condition_on_previous_text=condition_on_previous_text,
+            initial_prompt=initial_prompt,
+            without_timestamps=True,
+            word_timestamps=False,
+        )
+        if vad_filter:
+            kwargs['vad_parameters'] = {
+                'min_silence_duration_ms': 500,
+                'speech_pad_ms': 300,
+            }
+
+        segments, _info = model.transcribe(path, **kwargs)
+        pieces: list[str] = []
+        scores: list[float] = []
+        for segment in segments:
+            text = segment.text.strip()
+            if text:
+                pieces.append(text)
+                try:
+                    scores.append(float(segment.avg_logprob))
+                except (TypeError, ValueError, AttributeError):
+                    pass
+        score = sum(scores) / len(scores) if scores else -99.0
+        return ' '.join(pieces).strip(), score
 
     async def transcribe(self, path: str, language: str = 'ru') -> str:
         started = time.perf_counter()
         duration = await asyncio.to_thread(self._duration_seconds, path)
         model_name = self._model_for_duration(duration)
         model = await self._get_model(model_name)
+        long_model = (self.settings.whisper_long_model or '').strip()
+        beam_size, condition_previous, vad_filter = self._decode_profile(duration, model_name, long_model)
 
-        # Clamp old environment values so long notes are always chunked quickly.
         threshold = min(120, max(60, int(self.settings.whisper_parallel_threshold_seconds)))
         _threads, model_workers = self._runtime_cpu_config()
         parallelism = min(
@@ -191,26 +258,67 @@ class LocalWhisperProvider(SpeechToTextProvider):
             max(1, model_workers),
         )
 
+        # Short messages get one cleaned pass. If Whisper itself reports very low
+        # confidence, retry the untouched source and keep whichever pass is more
+        # confident. This costs extra CPU only on doubtful short clips.
         if duration < threshold or parallelism <= 1:
-            text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
-            logger.info(
-                'stt_done provider=local model=%s beam=%s audio_seconds=%.1f chunks=1 elapsed_ms=%d',
-                model_name,
-                self.settings.whisper_beam_size,
-                duration,
-                int((time.perf_counter() - started) * 1000),
-            )
-            return text
+            clean_folder = None
+            clean_path = None
+            if duration <= 180:
+                clean_folder, clean_path = await asyncio.to_thread(self._prepare_audio, path)
+            input_path = clean_path or path
+            try:
+                text, score = await asyncio.to_thread(
+                    self._transcribe_sync,
+                    model,
+                    input_path,
+                    language,
+                    beam_size,
+                    condition_previous,
+                    vad_filter,
+                )
+                if duration <= 45 and clean_path and score < -0.85:
+                    raw_text, raw_score = await asyncio.to_thread(
+                        self._transcribe_sync,
+                        model,
+                        path,
+                        language,
+                        max(5, beam_size),
+                        True,
+                        False,
+                    )
+                    if raw_text and raw_score > score:
+                        text, score = raw_text, raw_score
+                logger.info(
+                    'stt_done provider=local model=%s beam=%s confidence=%.3f audio_seconds=%.1f chunks=1 elapsed_ms=%d',
+                    model_name,
+                    beam_size,
+                    score,
+                    duration,
+                    int((time.perf_counter() - started) * 1000),
+                )
+                return text
+            finally:
+                if clean_folder:
+                    await asyncio.to_thread(shutil.rmtree, clean_folder, True)
 
         split_started = time.perf_counter()
         try:
             folder, chunks = await asyncio.to_thread(self._split_long_audio, path)
         except Exception:
-            text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
+            text, _score = await asyncio.to_thread(
+                self._transcribe_sync,
+                model,
+                path,
+                language,
+                beam_size,
+                condition_previous,
+                vad_filter,
+            )
             logger.info(
                 'stt_done provider=local model=%s beam=%s audio_seconds=%.1f chunks=1 split=fallback elapsed_ms=%d',
                 model_name,
-                self.settings.whisper_beam_size,
+                beam_size,
                 duration,
                 int((time.perf_counter() - started) * 1000),
             )
@@ -222,7 +330,15 @@ class LocalWhisperProvider(SpeechToTextProvider):
 
         async def run_chunk(index: int, chunk: str):
             async with semaphore:
-                text = await asyncio.to_thread(self._transcribe_sync, model, chunk, language)
+                text, _score = await asyncio.to_thread(
+                    self._transcribe_sync,
+                    model,
+                    chunk,
+                    language,
+                    beam_size,
+                    condition_previous,
+                    True,
+                )
                 return index, text
 
         try:
@@ -232,7 +348,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
             logger.info(
                 'stt_done provider=local model=%s beam=%s audio_seconds=%.1f chunks=%d parallel=%d split_ms=%d elapsed_ms=%d',
                 model_name,
-                self.settings.whisper_beam_size,
+                beam_size,
                 duration,
                 chunk_count,
                 min(parallelism, chunk_count),
