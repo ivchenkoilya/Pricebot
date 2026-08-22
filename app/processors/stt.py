@@ -23,13 +23,13 @@ class SpeechToTextProvider:
 
 
 class LocalWhisperProvider(SpeechToTextProvider):
-    """Balanced faster-whisper provider for Telegram audio.
+    """Low-latency faster-whisper provider for Telegram audio.
 
-    The previous configuration deliberately favoured raw speed (tiny model,
-    greedy decoding and no previous-text context). That was fast, but Russian
-    conversational voice notes could turn into visibly garbled source text.
-    This provider now keeps CPU-friendly int8 inference while using a base-model
-    quality floor and context-aware beam decoding.
+    Keep the noticeably better multilingual ``base`` model, but avoid expensive
+    beam search. Long voice notes are split into short chunks and processed by
+    the number of workers that actually fit the container CPU quota. This is
+    much faster than the previous base + beam=5 path and avoids CPU
+    oversubscription on small Amvera containers.
     """
 
     _models: dict[tuple[str, str, str, int, int], object] = {}
@@ -38,9 +38,38 @@ class LocalWhisperProvider(SpeechToTextProvider):
     def __init__(self, settings: Settings):
         self.settings = settings
 
+    @staticmethod
+    def _cgroup_cpu_limit() -> int | None:
+        """Return the effective cgroup v2 CPU quota when it is available."""
+        try:
+            raw = Path('/sys/fs/cgroup/cpu.max').read_text(encoding='utf-8').strip().split()
+            if len(raw) >= 2 and raw[0] != 'max':
+                quota = int(raw[0])
+                period = int(raw[1])
+                if quota > 0 and period > 0:
+                    # Round up fractional quotas so a 1.5 CPU container can use
+                    # two single-thread workers instead of behaving like 1 CPU.
+                    return max(1, (quota + period - 1) // period)
+        except (OSError, ValueError):
+            pass
+        return None
+
+    def _runtime_cpu_config(self) -> tuple[int, int]:
+        requested_threads = max(1, int(self.settings.whisper_cpu_threads or 1))
+        requested_workers = max(1, int(self.settings.whisper_num_workers or 1))
+        cpu_limit = self._cgroup_cpu_limit()
+        if cpu_limit is None:
+            return requested_threads, requested_workers
+
+        workers = min(requested_workers, cpu_limit)
+        # CTranslate2's cpu_threads are per worker. Divide the available CPU
+        # budget between workers instead of accidentally requesting 4 threads
+        # from a 2-vCPU container.
+        threads = min(requested_threads, max(1, cpu_limit // workers))
+        return threads, workers
+
     async def _get_model(self):
-        cpu_threads = max(1, int(self.settings.whisper_cpu_threads or 1))
-        workers = max(1, int(self.settings.whisper_num_workers or 1))
+        cpu_threads, workers = self._runtime_cpu_config()
         model_name = self.settings.resolved_whisper_model
         key = (
             model_name,
@@ -78,31 +107,29 @@ class LocalWhisperProvider(SpeechToTextProvider):
     async def prewarm(self) -> None:
         await self._get_model()
 
-    @staticmethod
-    def _transcribe_sync(model, path: str, language: str) -> str:
-        # A short Russian prompt helps Whisper keep punctuation and common
-        # conversational structure without asking it to invent missing words.
+    def _transcribe_sync(self, model, path: str, language: str) -> str:
         initial_prompt = None
         if language.lower().startswith('ru'):
             initial_prompt = (
-                'Русская разговорная речь. Сохраняй имена, числа, даты, сленг и разговорные выражения. '
-                'Расставляй естественную пунктуацию.'
+                'Русская разговорная речь. Сохраняй имена, числа, даты, сленг и разговорные выражения.'
             )
+
+        beam_size = max(1, int(self.settings.whisper_beam_size or 1))
         segments, _info = model.transcribe(
             path,
             language=language,
             vad_filter=True,
             vad_parameters={
-                # Less aggressive VAD prevents clipped word endings and short
-                # phrases, which was especially noticeable in Telegram Opus.
-                'min_silence_duration_ms': 500,
-                'speech_pad_ms': 260,
+                'min_silence_duration_ms': 400,
+                'speech_pad_ms': 200,
             },
-            beam_size=5,
-            best_of=5,
-            patience=1.0,
+            # Beam 5 + best_of 5 made a 10–15 minute voice note painfully slow
+            # on CPU. Greedy decoding with the stronger base model is the best
+            # speed/quality tradeoff for this bot.
+            beam_size=beam_size,
+            best_of=1,
             temperature=0.0,
-            condition_on_previous_text=True,
+            condition_on_previous_text=self.settings.whisper_condition_on_previous_text,
             initial_prompt=initial_prompt,
             without_timestamps=True,
             word_timestamps=False,
@@ -131,7 +158,7 @@ class LocalWhisperProvider(SpeechToTextProvider):
         temp_root.mkdir(parents=True, exist_ok=True)
         folder = tempfile.mkdtemp(prefix='clarify-stt-', dir=temp_root)
         pattern = str(Path(folder) / 'chunk_%03d.wav')
-        chunk_seconds = max(120, int(self.settings.whisper_chunk_seconds))
+        chunk_seconds = max(60, int(self.settings.whisper_chunk_seconds))
         command = [
             'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
             '-i', path,
@@ -152,18 +179,24 @@ class LocalWhisperProvider(SpeechToTextProvider):
 
     async def transcribe(self, path: str, language: str = 'ru') -> str:
         started = time.perf_counter()
+        # Probe before model access. It is cheap and lets long-file routing start
+        # immediately even while a freshly deployed bot is still warming up.
+        duration = await asyncio.to_thread(self._duration_seconds, path)
         model = await self._get_model()
         model_name = self.settings.resolved_whisper_model
-        duration = await asyncio.to_thread(self._duration_seconds, path)
-        threshold = max(120, int(self.settings.whisper_parallel_threshold_seconds))
-        parallelism = max(1, int(self.settings.whisper_parallel_chunks))
-        chunk_count = 1
+        threshold = max(60, int(self.settings.whisper_parallel_threshold_seconds))
+        _threads, model_workers = self._runtime_cpu_config()
+        parallelism = min(
+            max(1, int(self.settings.whisper_parallel_chunks)),
+            max(1, model_workers),
+        )
 
         if duration < threshold or parallelism <= 1:
             text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
             logger.info(
-                'stt_done provider=local model=%s audio_seconds=%.1f chunks=1 elapsed_ms=%d',
+                'stt_done provider=local model=%s beam=%s audio_seconds=%.1f chunks=1 elapsed_ms=%d',
                 model_name,
+                self.settings.whisper_beam_size,
                 duration,
                 int((time.perf_counter() - started) * 1000),
             )
@@ -175,8 +208,9 @@ class LocalWhisperProvider(SpeechToTextProvider):
         except Exception:
             text = await asyncio.to_thread(self._transcribe_sync, model, path, language)
             logger.info(
-                'stt_done provider=local model=%s audio_seconds=%.1f chunks=1 split=fallback elapsed_ms=%d',
+                'stt_done provider=local model=%s beam=%s audio_seconds=%.1f chunks=1 split=fallback elapsed_ms=%d',
                 model_name,
+                self.settings.whisper_beam_size,
                 duration,
                 int((time.perf_counter() - started) * 1000),
             )
@@ -196,8 +230,9 @@ class LocalWhisperProvider(SpeechToTextProvider):
             results.sort(key=lambda item: item[0])
             text = ' '.join(value for _index, value in results if value).strip()
             logger.info(
-                'stt_done provider=local model=%s audio_seconds=%.1f chunks=%d parallel=%d split_ms=%d elapsed_ms=%d',
+                'stt_done provider=local model=%s beam=%s audio_seconds=%.1f chunks=%d parallel=%d split_ms=%d elapsed_ms=%d',
                 model_name,
+                self.settings.whisper_beam_size,
                 duration,
                 chunk_count,
                 min(parallelism, chunk_count),
