@@ -7,7 +7,7 @@ from app.bot.razberi_keyboards import actions
 from app.database.models import User
 from app.database.razberi_models import AIUsage, Referral
 from app.services.growth import GrowthService, build_referral_link, parse_start_payload
-from app.webapp import webapp_api_router
+from app.webapp.intake import router as intake_router
 
 
 def test_direct_start_is_recorded_as_direct():
@@ -47,7 +47,7 @@ def test_material_actions_include_privacy_safe_share_callback():
 
 
 def test_mini_app_profile_stats_route_is_registered():
-    paths = {getattr(route, 'path', None) for route in webapp_api_router.routes}
+    paths = {getattr(route, 'path', None) for route in intake_router.routes}
     assert '/api/profile/stats' in paths
 
 
