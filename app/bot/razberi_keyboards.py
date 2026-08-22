@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -29,12 +31,35 @@ LEGACY_SUPPORT = '🛟 Поддержка / сообщить об ошибке'
 LEGACY_CLEAR = '🗑 Очистить материалы'
 
 
+def quick_webapp_url(webapp_url: str = '') -> str:
+    """Build a direct, cache-busted URL for Telegram reply-keyboard WebApps.
+
+    Telegram Android can keep a stale WebView document for persistent reply
+    keyboard buttons. The /start inline WebApp opens a fresh view, which is why
+    it could work while the bottom Mini App button showed only the blue
+    background. Point the quick button straight at /app/ on Amvera and add a
+    launch version so Telegram must request a fresh document.
+    """
+    url = (webapp_url or '').strip()
+    url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+    url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+    if not url.startswith('https://'):
+        return url
+
+    parts = urlsplit(url)
+    path = parts.path or '/'
+    if parts.netloc.lower() == 'pricebot2-ivch.amvera.io' and path in {'', '/'}:
+        path = '/app/'
+
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query['launch'] = 'keyboard'
+    query['v'] = '20260822-4'
+    return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
+
+
 def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
     mini_app = KeyboardButton(text=BTN_MINIAPP)
-    # Important: use exactly the same final URL that /start uses. Do not append
-    # /app/ or rewrite the path here; a different URL caused the reply-keyboard
-    # WebApp to open a blank Telegram view while the /start inline button worked.
-    url = (webapp_url or '').strip()
+    url = quick_webapp_url(webapp_url)
     if url.startswith('https://'):
         mini_app = KeyboardButton(text=BTN_MINIAPP, web_app=WebAppInfo(url=url))
 
