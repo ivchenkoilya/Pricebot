@@ -107,14 +107,29 @@ def build_start_router(ctx) -> Router:
     async def send_start(message: Message) -> None:
         user = await get_user(ctx, message.from_user)
         await ctx.metrics.inc('starts', user.id)
+        menu_attached = False
         try:
-            await message.answer_photo(BufferedInputFile(clarify_banner_jpeg(), filename='clarify-start.jpg'))
+            # Attach the persistent reply keyboard to the banner itself. This
+            # refreshes the bottom quick menu without creating a separate
+            # "Быстрое меню обновлено" service-looking message in the chat.
+            await message.answer_photo(
+                BufferedInputFile(clarify_banner_jpeg(), filename='clarify-start.jpg'),
+                reply_markup=main_menu(settings.webapp_url),
+            )
+            menu_attached = True
         except Exception as exc:
             await ctx.errors.record('start-banner', message.from_user.id, 'start_banner', exc)
+
+        # If the banner failed, still refresh the persistent keyboard, then
+        # remove the temporary invisible message so the chat stays clean.
+        if not menu_attached:
+            try:
+                temp = await message.answer('\u2063', reply_markup=main_menu(settings.webapp_url))
+                await temp.delete()
+            except Exception:
+                pass
+
         await message.answer(START_TEXT, reply_markup=_start_keyboard(settings.webapp_url))
-        # Reply keyboards are persistent in Telegram. Sending the current menu on
-        # every /start replaces stale buttons left from older Clarify releases.
-        await message.answer('⌨️ <b>Быстрое меню обновлено.</b>', reply_markup=main_menu(settings.webapp_url))
 
     @router.message(CommandStart())
     async def start(message: Message):
