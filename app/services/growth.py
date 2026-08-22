@@ -123,12 +123,20 @@ class GrowthService:
             session.add(Metric(name=f'source_{parsed.source}'[:64], user_id=user_id, value=1))
 
             if parsed.referrer_telegram_id is not None:
+                # A referral is for a user who has not already consumed Clarify AI.
+                # This prevents existing users from reopening the bot through a
+                # referral link and manufacturing a reward.
+                prior_ai_usage = (
+                    await session.execute(
+                        select(AIUsage.id).where(AIUsage.user_id == user_id).limit(1)
+                    )
+                ).scalar_one_or_none()
                 referrer = (
                     await session.execute(
                         select(User).where(User.telegram_id == parsed.referrer_telegram_id)
                     )
                 ).scalar_one_or_none()
-                if referrer is not None and referrer.id != user_id:
+                if prior_ai_usage is None and referrer is not None and referrer.id != user_id:
                     existing_ref = (
                         await session.execute(
                             select(Referral).where(Referral.referred_user_id == user_id)
@@ -148,20 +156,12 @@ class GrowthService:
         return parsed
 
     async def sync_conversion(self, telegram_id: int) -> ReferralReward | None:
-        """Mark first successful AI use and grant a pending referral exactly once."""
+        """Mark first successful post-acquisition AI use and grant a referral once."""
         async with self.db.sessions() as session:
             user = (
                 await session.execute(select(User).where(User.telegram_id == int(telegram_id)))
             ).scalar_one_or_none()
             if user is None:
-                return None
-
-            has_ai_usage = (
-                await session.execute(
-                    select(AIUsage.id).where(AIUsage.user_id == user.id).limit(1)
-                )
-            ).scalar_one_or_none()
-            if has_ai_usage is None:
                 return None
 
             acquisition = (
@@ -170,8 +170,19 @@ class GrowthService:
                 )
             ).scalar_one_or_none()
             if acquisition is None:
-                acquisition = UserAcquisition(user_id=user.id, source='direct', raw_payload='')
-                session.add(acquisition)
+                # Do not retroactively count legacy users as new acquisitions.
+                return None
+
+            qualifying_ai_usage = (
+                await session.execute(
+                    select(AIUsage.id).where(
+                        AIUsage.user_id == user.id,
+                        AIUsage.created_at >= acquisition.first_seen_at,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if qualifying_ai_usage is None:
+                return None
 
             if acquisition.first_analysis_at is None:
                 acquisition.first_analysis_at = datetime.utcnow()
@@ -189,10 +200,7 @@ class GrowthService:
                 await session.commit()
                 return None
 
-            # Existing Clarify users must not be able to open a referral link
-            # after they already used AI and instantly trigger a reward. The
-            # qualifying AI operation has to happen after this referral record.
-            qualifying_ai_usage = (
+            qualifying_referral_usage = (
                 await session.execute(
                     select(AIUsage.id).where(
                         AIUsage.user_id == user.id,
@@ -200,7 +208,7 @@ class GrowthService:
                     ).limit(1)
                 )
             ).scalar_one_or_none()
-            if qualifying_ai_usage is None:
+            if qualifying_referral_usage is None:
                 await session.commit()
                 return None
 
