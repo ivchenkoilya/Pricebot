@@ -135,7 +135,7 @@ function SourceImagePreview({ title, meta, onAvailable }: { title: string; meta:
           return
         }
 
-        const initData = window.Telegram?.WebApp.initData || ''
+        const initData = window.Telegram?.WebApp?.initData || ''
         const headers = new Headers()
         if (initData) headers.set('Authorization', `tma ${initData}`)
         const response = await fetch(`/api/materials/${image.id}/source-image`, { headers })
