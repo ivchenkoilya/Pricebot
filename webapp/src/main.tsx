@@ -18,6 +18,14 @@ import './ux-fixes.css'
 
 const telegramWebApp = window.Telegram?.WebApp
 
+// Mark the page ready before React mounts. On some Telegram Android launches
+// from persistent reply-keyboard WebApp buttons the WebView waits for ready()
+// while React is still booting, leaving only the background visible.
+telegramWebApp?.ready?.()
+telegramWebApp?.expand?.()
+telegramWebApp?.setHeaderColor?.('#061126')
+telegramWebApp?.setBackgroundColor?.('#061126')
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
@@ -29,8 +37,3 @@ createRoot(document.getElementById('root')!).render(
     <SupportWidget />
   </StrictMode>,
 )
-
-// Tell Telegram that the UI is ready and request the full available height.
-// This is intentionally done for every entry path, including reply-keyboard WebApps.
-telegramWebApp?.expand?.()
-telegramWebApp?.ready?.()
