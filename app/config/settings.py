@@ -60,11 +60,10 @@ class Settings(BaseSettings):
     max_daily_ai_limit: int = 1000
     free_voice_daily_limit: int = 3
     free_voice_max_seconds: int = 600
-    pro_voice_max_seconds: int = 3600
-    # MAX currently shares the same per-file caps as PRO; its main value is a much larger AI request pool.
+    pro_voice_max_seconds: int = 1800
     max_voice_max_seconds: int = 3600
     free_document_max_pages: int = 15
-    pro_document_max_pages: int = 200
+    pro_document_max_pages: int = 100
     max_document_max_pages: int = 200
     max_file_size_mb: int = 25
 
