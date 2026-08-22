@@ -29,22 +29,12 @@ LEGACY_SUPPORT = '🛟 Поддержка / сообщить об ошибке'
 LEGACY_CLEAR = '🗑 Очистить материалы'
 
 
-def normalize_webapp_url(webapp_url: str = '') -> str:
-    """Point Telegram straight at the Mini App page, without Amvera redirects."""
-    url = (webapp_url or '').strip()
-    url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
-    url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
-    root = 'https://pricebot2-ivch.amvera.io'
-    if url.rstrip('/') == root:
-        return root + '/app/'
-    if url.startswith(root + '/app'):
-        return root + '/app/'
-    return url
-
-
 def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
     mini_app = KeyboardButton(text=BTN_MINIAPP)
-    url = normalize_webapp_url(webapp_url)
+    # Important: use exactly the same final URL that /start uses. Do not append
+    # /app/ or rewrite the path here; a different URL caused the reply-keyboard
+    # WebApp to open a blank Telegram view while the /start inline button worked.
+    url = (webapp_url or '').strip()
     if url.startswith('https://'):
         mini_app = KeyboardButton(text=BTN_MINIAPP, web_app=WebAppInfo(url=url))
 
