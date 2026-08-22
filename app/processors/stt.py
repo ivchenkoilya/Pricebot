@@ -25,11 +25,10 @@ class SpeechToTextProvider:
 class LocalWhisperProvider(SpeechToTextProvider):
     """Low-latency faster-whisper provider for Telegram audio.
 
-    Keep the noticeably better multilingual ``base`` model, but avoid expensive
-    beam search. Long voice notes are split into short chunks and processed by
-    the number of workers that actually fit the container CPU quota. This is
-    much faster than the previous base + beam=5 path and avoids CPU
-    oversubscription on small Amvera containers.
+    Short voice notes keep the stronger multilingual ``base`` model. Long audio
+    automatically switches to a much lighter model, uses greedy decoding and is
+    split into short chunks. CPU settings are also capped by the container's
+    cgroup quota so Amvera is not slowed down by thread oversubscription.
     """
 
     _models: dict[tuple[str, str, str, int, int], object] = {}
@@ -40,15 +39,12 @@ class LocalWhisperProvider(SpeechToTextProvider):
 
     @staticmethod
     def _cgroup_cpu_limit() -> int | None:
-        """Return the effective cgroup v2 CPU quota when it is available."""
         try:
             raw = Path('/sys/fs/cgroup/cpu.max').read_text(encoding='utf-8').strip().split()
             if len(raw) >= 2 and raw[0] != 'max':
                 quota = int(raw[0])
                 period = int(raw[1])
                 if quota > 0 and period > 0:
-                    # Round up fractional quotas so a 1.5 CPU container can use
-                    # two single-thread workers instead of behaving like 1 CPU.
                     return max(1, (quota + period - 1) // period)
         except (OSError, ValueError):
             pass
@@ -62,15 +58,14 @@ class LocalWhisperProvider(SpeechToTextProvider):
             return requested_threads, requested_workers
 
         workers = min(requested_workers, cpu_limit)
-        # CTranslate2's cpu_threads are per worker. Divide the available CPU
-        # budget between workers instead of accidentally requesting 4 threads
-        # from a 2-vCPU container.
+        # cpu_threads are per CTranslate2 worker. Split the real CPU allowance
+        # between workers instead of accidentally requesting 4 threads on 2 CPU.
         threads = min(requested_threads, max(1, cpu_limit // workers))
         return threads, workers
 
-    async def _get_model(self):
+    async def _get_model(self, model_name: str | None = None):
         cpu_threads, workers = self._runtime_cpu_config()
-        model_name = self.settings.resolved_whisper_model
+        model_name = (model_name or self.settings.resolved_whisper_model).strip()
         key = (
             model_name,
             self.settings.whisper_compute_type,
@@ -105,14 +100,13 @@ class LocalWhisperProvider(SpeechToTextProvider):
         return self.__class__._models[key]
 
     async def prewarm(self) -> None:
-        await self._get_model()
+        # Preload the normal short-message model in the background at startup.
+        await self._get_model(self.settings.resolved_whisper_model)
 
     def _transcribe_sync(self, model, path: str, language: str) -> str:
         initial_prompt = None
         if language.lower().startswith('ru'):
-            initial_prompt = (
-                'Русская разговорная речь. Сохраняй имена, числа, даты, сленг и разговорные выражения.'
-            )
+            initial_prompt = 'Русская разговорная речь. Сохраняй имена, числа, даты, сленг и разговорные выражения.'
 
         beam_size = max(1, int(self.settings.whisper_beam_size or 1))
         segments, _info = model.transcribe(
@@ -123,9 +117,6 @@ class LocalWhisperProvider(SpeechToTextProvider):
                 'min_silence_duration_ms': 400,
                 'speech_pad_ms': 200,
             },
-            # Beam 5 + best_of 5 made a 10–15 minute voice note painfully slow
-            # on CPU. Greedy decoding with the stronger base model is the best
-            # speed/quality tradeoff for this bot.
             beam_size=beam_size,
             best_of=1,
             temperature=0.0,
@@ -158,7 +149,9 @@ class LocalWhisperProvider(SpeechToTextProvider):
         temp_root.mkdir(parents=True, exist_ok=True)
         folder = tempfile.mkdtemp(prefix='clarify-stt-', dir=temp_root)
         pattern = str(Path(folder) / 'chunk_%03d.wav')
-        chunk_seconds = max(60, int(self.settings.whisper_chunk_seconds))
+        # Clamp old Amvera env values too: previous deployments used 300s
+        # chunks, which made every progress step feel frozen for minutes.
+        chunk_seconds = min(120, max(60, int(self.settings.whisper_chunk_seconds)))
         command = [
             'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
             '-i', path,
@@ -177,14 +170,21 @@ class LocalWhisperProvider(SpeechToTextProvider):
             shutil.rmtree(folder, ignore_errors=True)
             raise
 
+    def _model_for_duration(self, duration: float) -> str:
+        long_after = max(60, int(self.settings.whisper_long_model_after_seconds))
+        fast_model = (self.settings.whisper_long_model or '').strip()
+        if fast_model and duration >= long_after:
+            return fast_model
+        return self.settings.resolved_whisper_model
+
     async def transcribe(self, path: str, language: str = 'ru') -> str:
         started = time.perf_counter()
-        # Probe before model access. It is cheap and lets long-file routing start
-        # immediately even while a freshly deployed bot is still warming up.
         duration = await asyncio.to_thread(self._duration_seconds, path)
-        model = await self._get_model()
-        model_name = self.settings.resolved_whisper_model
-        threshold = max(60, int(self.settings.whisper_parallel_threshold_seconds))
+        model_name = self._model_for_duration(duration)
+        model = await self._get_model(model_name)
+
+        # Clamp old environment values so long notes are always chunked quickly.
+        threshold = min(120, max(60, int(self.settings.whisper_parallel_threshold_seconds)))
         _threads, model_workers = self._runtime_cpu_config()
         parallelism = min(
             max(1, int(self.settings.whisper_parallel_chunks)),
