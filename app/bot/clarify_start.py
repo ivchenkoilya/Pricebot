@@ -10,10 +10,10 @@ from app.brand import clarify_banner_jpeg
 
 
 START_TEXT = (
-    '<b>Clarify</b> — разберёт это за тебя.\n\n'
+    '<b>Привет! Я Clarify.</b>\n\n'
     'Не хочешь слушать длинное голосовое, читать документ или разбираться в переписке? '
     '<b>Просто отправь материал сюда.</b>\n\n'
-    'Получишь главное, задачи, сроки, суммы, риски и готовый следующий шаг.'
+    'Я покажу главное, задачи, сроки, суммы, риски и готовый следующий шаг.'
 )
 
 CAPABILITIES_TEXT = (
@@ -90,17 +90,16 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text='📷 Скриншот', callback_data='growth:hint:image'),
             InlineKeyboardButton(text='💬 Переписка', callback_data='growth:hint:chat'),
         ],
-        [
-            InlineKeyboardButton(text='✨ Попробовать на примере', callback_data='growth:demo'),
-        ],
+        [InlineKeyboardButton(text='✨ Попробовать на примере', callback_data='growth:demo')],
         [
             InlineKeyboardButton(text='🎁 Пригласить друга', callback_data='growth:invite'),
             InlineKeyboardButton(text='👤 Профиль', callback_data='growth:profile'),
         ],
         [
             InlineKeyboardButton(text='✨ Возможности', callback_data='start:capabilities'),
-            InlineKeyboardButton(text='❓ Помощь', callback_data='start:help'),
+            InlineKeyboardButton(text='💡 Примеры', callback_data='start:examples'),
         ],
+        [InlineKeyboardButton(text='❓ Помощь', callback_data='start:help')],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
