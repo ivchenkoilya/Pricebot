@@ -58,10 +58,10 @@ def parse_start_payload(payload: str | None) -> ParsedStart:
         source = 'tiktok'
     elif safe.startswith('youtube') or safe.startswith('shorts'):
         source = 'youtube'
-    elif safe.startswith('tg_') or safe.startswith('telegram'):
-        source = 'telegram'
     elif safe.startswith('ads_') or safe.startswith('telegram_ads'):
         source = 'telegram_ads'
+    elif safe.startswith('tg_') or safe.startswith('telegram'):
+        source = 'telegram'
     else:
         source = safe.split('_', 1)[0] or 'campaign'
 
@@ -104,6 +104,8 @@ class GrowthService:
                 )
             ).scalar_one_or_none()
             if existing is not None:
+                # First-touch attribution is immutable. Reopening the bot through
+                # another campaign or somebody else's referral never overwrites it.
                 return ParsedStart(
                     source=existing.source,
                     campaign=existing.campaign,
@@ -146,7 +148,7 @@ class GrowthService:
         return parsed
 
     async def sync_conversion(self, telegram_id: int) -> ReferralReward | None:
-        """Mark first successful AI use and atomically grant a pending referral once."""
+        """Mark first successful AI use and grant a pending referral exactly once."""
         async with self.db.sessions() as session:
             user = (
                 await session.execute(select(User).where(User.telegram_id == int(telegram_id)))
@@ -184,6 +186,21 @@ class GrowthService:
                 )
             ).scalar_one_or_none()
             if referral is None:
+                await session.commit()
+                return None
+
+            # Existing Clarify users must not be able to open a referral link
+            # after they already used AI and instantly trigger a reward. The
+            # qualifying AI operation has to happen after this referral record.
+            qualifying_ai_usage = (
+                await session.execute(
+                    select(AIUsage.id).where(
+                        AIUsage.user_id == user.id,
+                        AIUsage.created_at >= referral.created_at,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if qualifying_ai_usage is None:
                 await session.commit()
                 return None
 
