@@ -42,6 +42,18 @@ STANDALONE_HOWTO_PREFIXES = (
     'в чем разница между ', 'в чём разница между ', 'объясни что такое ',
 )
 
+# Intent words such as «штраф», «рублей», «срок» and «риск» can also simply be
+# facts inside a brand-new pasted message. We only treat them as a command about
+# the previous material when the user actually phrases a request/question.
+ACTION_PREFIXES = (
+    'найди ', 'покажи ', 'выдели ', 'перечисли ', 'скажи ', 'проверь ', 'проанализируй ',
+    'объясни ', 'сделай ', 'сократи ', 'ответь ', 'подготовь ', 'укажи ', 'посчитай ',
+)
+ACTION_SINGLE_PHRASES = {
+    'риски', 'риск', 'штрафы', 'штраф', 'деньги', 'суммы', 'сумма', 'цена', 'стоимость', 'оплата',
+    'сроки', 'срок', 'даты', 'дата', 'задачи', 'задача', 'действия', 'что делать', 'кратко', 'короче',
+}
+
 INTERROGATIVE_WORDS = re.compile(
     r'\b(кто|что|где|когда|сколько|какой|какая|какие|какого|какую|каком|каких|'
     r'почему|зачем|как|куда|откуда|чем|чей|чья|чьи)\b',
@@ -76,6 +88,16 @@ def _normalized_phrase(text: str) -> str:
 def _has_context_reference(low: str) -> bool:
     padded = f' {low} '
     return any(ref in padded for ref in CONTEXT_REFERENCES)
+
+
+def _looks_like_explicit_request(value: str, low: str, phrase: str) -> bool:
+    if phrase in ACTION_SINGLE_PHRASES:
+        return True
+    if low.startswith(QUESTION_STARTS) or low.startswith(ACTION_PREFIXES):
+        return True
+    # A question mark counts only for reasonably short chat questions. Long
+    # pasted materials often contain quoted questions and must stay new input.
+    return len(value) <= 260 and '?' in value
 
 
 def looks_like_followup(text: str) -> bool:
@@ -150,7 +172,15 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if any(x in low for x in ('что от меня хотят', 'что мне нужно сделать', 'что я должен сделать', 'что нужно от меня')):
+    # A substantial declarative paste is a new material even if it mentions
+    # money, deadlines, risks or penalties that also exist in an older item.
+    # This is the common Telegram flow: paste/send material first, ask about it
+    # in the next message.
+    explicit_request = _looks_like_explicit_request(value, low, phrase)
+    if len(value) > 260 and not explicit_request:
+        return IntentDecision('new_material')
+
+    if explicit_request and any(x in low for x in ('что от меня хотят', 'что мне нужно сделать', 'что я должен сделать', 'что нужно от меня')):
         return IntentDecision(
             'wants',
             'Скажи, что конкретно требуется от пользователя: действия, сроки, кому ответить и что подтвердить. Не выдумывай.',
@@ -158,7 +188,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if any(x in low for x in ('риск', 'опасн', 'штраф', 'невыгод', 'подводн')):
+    if explicit_request and any(x in low for x in ('риск', 'опасн', 'штраф', 'невыгод', 'подводн')):
         return IntentDecision(
             'risks',
             'Найди риски, штрафы, ограничения, спорные и потенциально невыгодные условия. Укажи только то, что есть в материале.',
@@ -167,7 +197,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             True,
         )
 
-    if any(x in low for x in ('сумм', 'цен', 'стоим', 'оплат', 'деньг', 'руб', '₽', 'доллар', 'евро')):
+    if explicit_request and any(x in low for x in ('сумм', 'цен', 'стоим', 'оплат', 'деньг', 'руб', '₽', 'доллар', 'евро')):
         return IntentDecision(
             'money',
             'Ответь по деньгам: суммы, цена, порядок и срок оплаты, штрафы или комиссии — только по материалу.',
@@ -175,7 +205,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if any(x in low for x in ('срок', 'дата', 'когда', 'дедлайн', 'до какого', 'крайний')):
+    if explicit_request and any(x in low for x in ('срок', 'дата', 'когда', 'дедлайн', 'до какого', 'крайний')):
         return IntentDecision(
             'dates',
             'Ответь по срокам и датам. Если есть несколько сроков, перечисли их с пояснением.',
@@ -183,7 +213,7 @@ def classify_text_intent(text: str, has_recent_material: bool = False) -> Intent
             has_recent_material,
         )
 
-    if any(x in low for x in ('задач', 'что делать', 'действи')):
+    if explicit_request and any(x in low for x in ('задач', 'что делать', 'действи')):
         return IntentDecision(
             'tasks',
             'Перечисли конкретные задачи и следующие действия. Если их нет — так и скажи.',
