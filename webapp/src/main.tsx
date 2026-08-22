@@ -16,6 +16,8 @@ import './product-upgrade.css'
 import './copilot.css'
 import './ux-fixes.css'
 
+const telegramWebApp = window.Telegram?.WebApp
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
@@ -27,3 +29,8 @@ createRoot(document.getElementById('root')!).render(
     <SupportWidget />
   </StrictMode>,
 )
+
+// Tell Telegram that the UI is ready and request the full available height.
+// This is intentionally done for every entry path, including reply-keyboard WebApps.
+telegramWebApp?.expand?.()
+telegramWebApp?.ready?.()
