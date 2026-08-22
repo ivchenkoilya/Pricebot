@@ -29,10 +29,24 @@ LEGACY_SUPPORT = '🛟 Поддержка / сообщить об ошибке'
 LEGACY_CLEAR = '🗑 Очистить материалы'
 
 
+def normalize_webapp_url(webapp_url: str = '') -> str:
+    """Point Telegram straight at the Mini App page, without Amvera redirects."""
+    url = (webapp_url or '').strip()
+    url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+    url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+    root = 'https://pricebot2-ivch.amvera.io'
+    if url.rstrip('/') == root:
+        return root + '/app/'
+    if url.startswith(root + '/app'):
+        return root + '/app/'
+    return url
+
+
 def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
     mini_app = KeyboardButton(text=BTN_MINIAPP)
-    if (webapp_url or '').strip().startswith('https://'):
-        mini_app = KeyboardButton(text=BTN_MINIAPP, web_app=WebAppInfo(url=webapp_url.strip()))
+    url = normalize_webapp_url(webapp_url)
+    if url.startswith('https://'):
+        mini_app = KeyboardButton(text=BTN_MINIAPP, web_app=WebAppInfo(url=url))
 
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -106,13 +120,15 @@ def materials_list(items) -> InlineKeyboardMarkup:
 
 
 def projects_list(items) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text=f'📁 {item.name[:45]}', callback_data=f'projopen:{item.id}')] for item in items[:20]]
+    rows = [[InlineKeyboardButton(text=f'📁 {item.name[:45]}', callback_data=f'projopen:{item.id}')]
+            for item in items[:20]]
     rows.append([InlineKeyboardButton(text='➕ Новый проект', callback_data='proj:new')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def project_picker(material_id: int, projects) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text=f'📁 {project.name[:42]}', callback_data=f'projadd:{material_id}:{project.id}')] for project in projects[:15]]
+    rows = [[InlineKeyboardButton(text=f'📁 {project.name[:42]}', callback_data=f'projadd:{material_id}:{project.id}')]
+            for project in projects[:15]]
     rows.append([InlineKeyboardButton(text='➕ Создать проект', callback_data=f'projnew:{material_id}')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
