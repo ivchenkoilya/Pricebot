@@ -7,6 +7,7 @@ from app.ai.provider import OpenAICompatibleProvider
 from app.config.settings import Settings
 from app.database.session import Database
 from app.processors.stt import build_stt
+from app.processors.yandex_stt import YandexSpeechKitProvider
 from app.services.conversation_context import ConversationContextService
 from app.services.core import (
     ErrorService,
@@ -51,6 +52,16 @@ class AppContext:
     doc_sem: asyncio.Semaphore
 
 
+def _build_primary_stt(settings: Settings, ai):
+    provider = (settings.stt_provider or 'local').strip().lower()
+    # build_stt intentionally remains the source of the local/OpenAI provider.
+    # When Yandex is selected we wrap a lazy local provider as a safety fallback.
+    base = build_stt(settings.model_copy(update={'stt_provider': 'local'}) if provider == 'yandex' else settings, ai)
+    if provider == 'yandex':
+        return YandexSpeechKitProvider(settings, fallback=base)
+    return base
+
+
 def build_context(settings: Settings, db: Database, bot) -> AppContext:
     ai = OpenAICompatibleProvider(settings)
     materials = MaterialService(db, settings)
@@ -74,8 +85,8 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         subscriptions=SubscriptionService(db),
         page_reader=PageReader(settings),
         media_downloader=FastMediaDownloader(settings),
-        stt=build_stt(settings, ai),
-        media_stt=build_stt(media_stt_settings, ai),
+        stt=_build_primary_stt(settings, ai),
+        media_stt=_build_primary_stt(media_stt_settings, ai),
         ai_sem=asyncio.Semaphore(settings.max_ai_concurrency),
         stt_sem=asyncio.Semaphore(settings.max_stt_concurrency),
         doc_sem=asyncio.Semaphore(settings.max_document_concurrency),
