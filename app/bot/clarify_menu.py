@@ -4,7 +4,7 @@ import uuid
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 from sqlalchemy import select
 
 from app.bot.clarify_start import HELP_TEXT
@@ -34,6 +34,25 @@ from app.bot.razberi_states import CompareMaterials, SupportMessage, WriteForMe
 from app.database.razberi_models import Reminder
 from app.services.copilot import build_inbox
 from app.services.core import bonus_requests, clarify_plan
+
+
+def _miniapp_url(value: str) -> str:
+    """Return the direct HTTPS page used by Telegram Web Apps.
+
+    Amvera's public root redirects to /app/. Telegram Web Apps are more reliable
+    when the keyboard points at the final page directly instead of an HTTP
+    redirect, so normalise the production Clarify URL here as a safety net for
+    old WEBAPP_URL values already stored in Amvera.
+    """
+    url = (value or '').strip()
+    url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+    url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
+    root = 'https://pricebot2-ivch.amvera.io'
+    if url.rstrip('/') == root:
+        return root + '/app/'
+    if url.startswith(root + '/app'):
+        return root + '/app/'
+    return url
 
 
 def build_menu_router(ctx) -> Router:
@@ -153,13 +172,30 @@ def build_menu_router(ctx) -> Router:
         user = await get_user(ctx, message.from_user)
         plan = clarify_plan(user, settings)
         extra = bonus_requests(user)
+        current = f'Текущий тариф: <b>{plan}</b>'
+        if extra:
+            current += f' · бонус <b>+{extra}</b>'
+
         await message.answer(
-            '💎 <b>Тарифы Clarify</b>\n\n'
-            f'Сейчас: <b>{plan}</b>' + (f' · +{extra} запросов' if extra else '') + '\n\n'
-            f'<b>FREE</b> — {settings.free_daily_ai_limit} AI-запросов/день\n'
-            f'<b>PRO</b> — {settings.pro_daily_ai_limit}/день · {settings.pro_stars_price} ⭐ / 30 дней\n'
-            f'<b>PRO MAX</b> — {settings.max_daily_ai_limit}/день · {settings.max_stars_price} ⭐ / 30 дней\n\n'
-            'Можно отдельно докупить +100, +500 или +2000 запросов. Пакеты расходуются после дневного лимита.',
+            '💎 <b>Тарифы Clarify</b>\n'
+            f'{current}\n\n'
+            '🆓 <b>FREE</b>\n'
+            f'• <b>{settings.free_daily_ai_limit}</b> AI-запросов в день\n'
+            f'• <b>{settings.free_voice_daily_limit}</b> голосовых в день, до <b>{settings.free_voice_max_seconds // 60} мин</b> каждое\n'
+            f'• документы до <b>{settings.free_document_max_pages} страниц</b>\n\n'
+            f'👑 <b>PRO · {settings.pro_stars_price} ⭐ / 30 дней</b>\n'
+            f'• <b>{settings.pro_daily_ai_limit}</b> AI-запросов в день\n'
+            f'• голосовые, аудио и видео до <b>{settings.pro_voice_max_seconds // 60} мин</b>\n'
+            f'• документы до <b>{settings.pro_document_max_pages} страниц</b>\n\n'
+            f'💎 <b>PRO MAX · {settings.max_stars_price} ⭐ / 30 дней</b>\n'
+            f'• <b>{settings.max_daily_ai_limit}</b> AI-запросов в день\n'
+            f'• голосовые, аудио и видео до <b>{settings.max_voice_max_seconds // 60} мин</b>\n'
+            f'• документы до <b>{settings.max_document_max_pages} страниц</b>\n\n'
+            '➕ <b>Дополнительные запросы</b>\n'
+            f'• +100 — <b>{settings.request_pack_100_stars} ⭐</b>\n'
+            f'• +500 — <b>{settings.request_pack_500_stars} ⭐</b>\n'
+            f'• +2000 — <b>{settings.request_pack_2000_stars} ⭐</b>\n\n'
+            '<i>Пакеты начинают расходоваться только после дневного лимита тарифа.</i>',
             reply_markup=plans_keyboard(settings),
         )
 
@@ -205,11 +241,13 @@ def build_menu_router(ctx) -> Router:
 
     @router.message(F.text == BTN_MINIAPP)
     async def miniapp_fallback(message: Message):
-        if (settings.webapp_url or '').strip().startswith('https://'):
-            # Normally Telegram opens the WebApp directly because this is a
-            # web_app KeyboardButton. This branch only covers legacy clients.
+        url = _miniapp_url(settings.webapp_url)
+        if url.startswith('https://'):
             return await message.answer(
-                '🏠 Mini App доступно через кнопку в обновлённом меню. Выполни /start, если Telegram показывает старую клавиатуру.'
+                '🏠 <b>Clarify Mini App</b>\n\nНажми кнопку ниже, чтобы открыть приложение:',
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text='🚀 Открыть Mini App', web_app=WebAppInfo(url=url))
+                ]]),
             )
         await message.answer('⚠️ Mini App сейчас не настроено. Попробуй позже.')
 
