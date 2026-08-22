@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import mimetypes
 import re
 import subprocess
@@ -17,12 +18,14 @@ from sqlalchemy import func, select
 from app.database.razberi_models import Material, Project, Reminder
 from app.processors.documents import DocumentTooLarge, extract_document
 from app.processors.text import TextProcessor
-from app.services.core import plan_document_max_pages, plan_voice_max_seconds
+from app.services.core import bonus_requests, plan_document_max_pages, plan_voice_max_seconds
+from app.services.growth import build_referral_link
 from app.services.media_downloader import MediaDownloadError, is_media_url
 from app.webapp.auth import TelegramWebAppUser, runtime_context, telegram_webapp_user
 
 
 router = APIRouter(prefix='/api', tags=['clarify-webapp-intake'])
+logger = logging.getLogger('clarify.webapp.intake')
 URL_RE = re.compile(r'^https?://', re.I)
 AUDIO_SUFFIXES = {'.mp3', '.wav', '.m4a', '.ogg', '.opus', '.webm', '.aac', '.flac'}
 DOCUMENT_SUFFIXES = {'.pdf', '.docx', '.txt', '.md', '.xlsx', '.csv'}
@@ -98,6 +101,27 @@ async def _ensure_ai_allowed(ctx, user) -> None:
         raise HTTPException(429, 'Лимит AI закончился. Открой вкладку «Тарифы» или докупи пакет запросов.')
 
 
+async def _sync_referral_after_success(ctx, user) -> None:
+    """Qualify a referral only after a material was successfully persisted."""
+    try:
+        reward = await ctx.growth.sync_conversion(int(user.telegram_id))
+        if reward is None:
+            return
+        await ctx.bot.send_message(
+            reward.referred_telegram_id,
+            f'🎁 <b>Реферальный бонус начислен</b>\n\n'
+            f'Первый успешный разбор готов — +{reward.amount} AI-запросов.',
+        )
+        await ctx.bot.send_message(
+            reward.referrer_telegram_id,
+            f'🎁 <b>Друг попробовал Clarify</b>\n\n'
+            f'Его первый разбор готов. Тебе начислено +{reward.amount} AI-запросов.',
+        )
+    except Exception:
+        # Referral UX must never turn a successful material analysis into an HTTP error.
+        logger.exception('Could not sync Mini App referral for telegram_id=%s', user.telegram_id)
+
+
 async def _analyze_and_store(ctx, user, source_text: str, kind: str, material_type: str, operation: str):
     await _ensure_ai_allowed(ctx, user)
     try:
@@ -108,6 +132,7 @@ async def _analyze_and_store(ctx, user, source_text: str, kind: str, material_ty
     await ctx.usage.record(user.id, model, f'webapp_intake_{operation}', usage)
     item = await ctx.materials.create(user.id, material_type, result.title, source_text, result.summary)
     await ctx.metrics.inc('material_open', user.id)
+    await _sync_referral_after_success(ctx, user)
     return _material_payload(item)
 
 
@@ -174,6 +199,7 @@ async def intake_file(request: Request, file: UploadFile = File(...), tg: Telegr
             except OSError:
                 pass
             raise
+        await _sync_referral_after_success(ctx, user)
         return _material_payload(item)
 
     temp_root = Path(ctx.settings.data_dir) / 'tmp' / 'webapp-intake'; temp_root.mkdir(parents=True, exist_ok=True)
@@ -222,4 +248,20 @@ async def profile_stats(request: Request, tg: TelegramWebAppUser = Depends(teleg
         materials_count = int((await db.execute(select(func.count(Material.id)).where(Material.user_id == user.id))).scalar() or 0)
         projects_count = int((await db.execute(select(func.count(Project.id)).where(Project.user_id == user.id))).scalar() or 0)
         reminders_count = int((await db.execute(select(func.count(Reminder.id)).where(Reminder.user_id == user.id, Reminder.status == 'active'))).scalar() or 0)
-    return {'materials': materials_count, 'projects': projects_count, 'reminders': reminders_count, 'ai_today': await ctx.usage.ai_count_today(user.id)}
+
+    referral = await ctx.growth.stats(user.id)
+    bot_user = await ctx.bot.get_me()
+    return {
+        'materials': materials_count,
+        'projects': projects_count,
+        'reminders': reminders_count,
+        'ai_today': await ctx.usage.ai_count_today(user.id),
+        'invited': referral.invited_total,
+        'activated': referral.rewarded_total,
+        'earned_requests': referral.earned_requests,
+        'bonus_requests': bonus_requests(user),
+        'referral_bonus': int(ctx.settings.referral_bonus_requests),
+        'referral_link': build_referral_link(bot_user.username or '', int(user.telegram_id)),
+        'source': referral.source,
+        'campaign': referral.campaign,
+    }

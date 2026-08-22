@@ -1,3 +1,5 @@
+from urllib.parse import parse_qs, urlsplit
+
 from app.bot.razberi_keyboards import (
     BTN_CLEAR,
     BTN_COMPARE,
@@ -36,7 +38,11 @@ def test_mini_app_is_real_webapp_button_for_https_url():
     mini = menu.keyboard[-1][-1]
     assert mini.text == BTN_MINIAPP
     assert mini.web_app is not None
-    assert mini.web_app.url == 'https://pricebot2-ivch.amvera.io/app/'
+    parsed = urlsplit(mini.web_app.url)
+    assert (parsed.scheme, parsed.netloc, parsed.path) == ('https', 'pricebot2-ivch.amvera.io', '/app/')
+    query = parse_qs(parsed.query)
+    assert query.get('launch') == ['keyboard']
+    assert query.get('v')
 
 
 def test_mini_app_falls_back_to_text_button_without_https():

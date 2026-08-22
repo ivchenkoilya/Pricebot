@@ -119,6 +119,7 @@ def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
         rows += [[InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'), InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')]]
 
     rows += [
+        [InlineKeyboardButton(text='📤 Поделиться', callback_data=f'share:{material_id}')],
         [InlineKeyboardButton(text='⏰ Напомнить', callback_data=f'mat:{material_id}:remind'), InlineKeyboardButton(text='📁 В проект', callback_data=f'mat:{material_id}:project')],
         [InlineKeyboardButton(text='📄 Исходник', callback_data=f'mat:{material_id}:source'), InlineKeyboardButton(text='🗑 Удалить', callback_data=f'mat:{material_id}:delete')],
     ]

@@ -10,24 +10,21 @@ from app.brand import clarify_banner_jpeg
 
 
 START_TEXT = (
-    '<b>Привет! Я Clarify 👋</b>\n\n'
-    'Разбираю голосовые, документы, скриншоты, сообщения и ссылки — и превращаю их в понятный результат.\n\n'
-    '✨ Кратко · 📌 Главное · ✅ Действия · 📅 Сроки · ⚠️ Риски\n\n'
-    '<b>Можешь отправить материал или просто написать задачу обычным языком.</b>'
+    '<b>Привет! Я Clarify.</b>\n\n'
+    'Не хочешь слушать длинное голосовое, читать документ или разбираться в переписке? '
+    '<b>Просто отправь материал сюда.</b>\n\n'
+    'Я покажу главное, задачи, сроки, суммы, риски и готовый следующий шаг.'
 )
 
 CAPABILITIES_TEXT = (
     '<b>Возможности Clarify</b>\n\n'
-    '✨ <b>Autonomous Copilot</b> — замечает задачи, сроки и риски и понимает команды обычным языком.\n\n'
-    '🎤 <b>Голосовые и аудио</b> — быстрая расшифровка, суть и действия.\n\n'
-    '📄 <b>Документы</b> — PDF, DOCX, TXT, MD, XLSX и CSV.\n\n'
+    '🎤 <b>Голосовые и аудио</b> — расшифровка, суть и действия.\n\n'
+    '📄 <b>Документы</b> — PDF, DOCX, TXT, MD, XLSX и CSV; сроки, деньги и риски.\n\n'
     '🖼 <b>Фото и скриншоты</b> — текст, смысл, ошибки и важные детали.\n\n'
+    '💬 <b>Переписки</b> — что от тебя хотят и готовый ответ.\n\n'
     '🔗 <b>Ссылки</b> — чтение доступных страниц и разбор содержимого.\n\n'
-    '🎬 <b>Видео-ссылки</b> — расшифровка и AI-разбор; скачивание видео появится позже.\n\n'
-    '🧠 <b>Memory</b> — поиск по смыслу и вопросы по сохранённым материалам.\n\n'
-    '📁 <b>Проекты</b> — связанные материалы в одной рабочей теме.\n\n'
-    '✍️ <b>Написать за меня</b> — готовые сообщения в нужном стиле.\n\n'
-    '⚡ <b>Сделать всё</b> — полный разбор материала одним действием в PRO.'
+    '🧠 <b>Memory</b> — вопросы по сохранённым материалам без повторной загрузки.\n\n'
+    '📁 <b>Проекты</b> — связанные материалы в одной рабочей теме.'
 )
 
 EXAMPLES_TEXT = (
@@ -38,43 +35,33 @@ EXAMPLES_TEXT = (
     '• «Объясни простыми словами»\n'
     '• «Какие здесь риски?»\n'
     '• «Сделай короткий ответ отправителю»\n'
-    '• «Найди в памяти, где было про оплату поставщику»\n'
-    '• «Что срочного?»\n'
-    '• «Создай проект Поставщик Альфа»\n'
-    '• «Покажи последние материалы»\n'
-    '• «Кратко расскажи, о чём ролик» + ссылка\n\n'
-    '<b>Или просто задай обычный вопрос — Clarify умеет работать и как AI-чат.</b>'
+    '• «А оплатить когда?» — после загруженного материала\n\n'
+    '<b>Или просто отправь материал — Clarify сам предложит подходящие действия.</b>'
 )
 
 HELP_TEXT = (
     '<b>Как пользоваться Clarify</b>\n\n'
-    '1. Отправь материал в чат или через Mini App.\n'
-    '2. Clarify сохранит его в Memory и покажет результат.\n'
-    '3. Выбери быстрое действие или задай свой вопрос.\n'
-    '4. Можно писать команды естественно: «найди в памяти…», «что срочного?», «создай проект…».\n'
-    '5. Для новой темы используй /clear.\n\n'
-    '<b>Быстрое меню снизу:</b>\n'
-    '📎 Разобрать · ✍️ Написать\n'
-    '🧠 Memory · ✨ AI Inbox\n'
-    '📁 Проекты · 🔀 Сравнить\n'
-    '💎 Тарифы · 🛟 Поддержка\n'
-    '⚙️ Настройки · 🗑 Очистить\n'
-    '❓ Помощь · 🏠 Mini App\n\n'
-    '<b>Команды:</b>\n/start — старт\n/help — помощь\n/about — о Clarify\n/examples — примеры\n'
-    '/summary — последний материал\n/clear — очистить контекст\n/support — поддержка и сообщение об ошибке'
+    '1. Отправь голосовое, документ, скриншот, сообщение или ссылку.\n'
+    '2. Clarify сохранит материал и покажет структурированный разбор.\n'
+    '3. Нажми нужное действие или задай вопрос обычным языком.\n'
+    '4. Для новой темы используй /clear.\n\n'
+    '<b>Команды:</b>\n'
+    '/start — старт\n/help — помощь\n/about — о Clarify\n/examples — примеры\n'
+    '/summary — последний материал\n/clear — очистить контекст\n'
+    '/profile — профиль и лимиты\n/invite — реферальная ссылка\n/support — поддержка'
 )
 
 ABOUT_TEXT = (
     '<b>Clarify — AI Workspace внутри Telegram.</b>\n\n'
-    'Он помогает быстро понимать документы, голосовые, изображения, сообщения и ссылки, а Autonomous Copilot '
-    'собирает важное из Memory и помогает доводить информацию до конкретных действий.'
+    'Он помогает быстро понимать документы, голосовые, изображения, сообщения и ссылки, '
+    'а затем превращает информацию в конкретные действия.'
 )
 
 HOW_TEXT = (
     '<b>Как это работает</b>\n\n'
     'Clarify определяет тип материала, извлекает содержимое, делает структурированный разбор и сохраняет его в Memory. '
     'После этого можно продолжать обычным языком: «а срок?», «что по цене?», «объясни проще?». '
-    'Autonomous Copilot отдельно умеет искать по всей Memory, собирать AI Inbox и понимать команды управления без меню.'
+    'Контекст остаётся привязан к материалу, поэтому повторно загружать файл не нужно.'
 )
 
 NO_CONTEXT_TEXT = (
@@ -83,19 +70,36 @@ NO_CONTEXT_TEXT = (
 )
 
 
+def _start_payload(message: Message) -> str:
+    text = (message.text or '').strip()
+    if ' ' not in text:
+        return ''
+    return text.split(maxsplit=1)[1].strip()[:255]
+
+
 def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if webapp_url.strip().startswith('https://'):
         rows.append([InlineKeyboardButton(text='🚀 Открыть Clarify', web_app=WebAppInfo(url=webapp_url.strip()))])
     rows += [
         [
+            InlineKeyboardButton(text='🎙 Голосовое', callback_data='growth:hint:voice'),
+            InlineKeyboardButton(text='📄 Документ', callback_data='growth:hint:document'),
+        ],
+        [
+            InlineKeyboardButton(text='📷 Скриншот', callback_data='growth:hint:image'),
+            InlineKeyboardButton(text='💬 Переписка', callback_data='growth:hint:chat'),
+        ],
+        [InlineKeyboardButton(text='✨ Попробовать на примере', callback_data='growth:demo')],
+        [
+            InlineKeyboardButton(text='🎁 Пригласить друга', callback_data='growth:invite'),
+            InlineKeyboardButton(text='👤 Профиль', callback_data='growth:profile'),
+        ],
+        [
             InlineKeyboardButton(text='✨ Возможности', callback_data='start:capabilities'),
             InlineKeyboardButton(text='💡 Примеры', callback_data='start:examples'),
         ],
-        [
-            InlineKeyboardButton(text='❓ Помощь', callback_data='start:help'),
-            InlineKeyboardButton(text='🛟 Поддержка', callback_data='support:open'),
-        ],
+        [InlineKeyboardButton(text='❓ Помощь', callback_data='start:help')],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -106,6 +110,7 @@ def build_start_router(ctx) -> Router:
 
     async def send_start(message: Message) -> None:
         user = await get_user(ctx, message.from_user)
+        await ctx.growth.capture_start(user.id, _start_payload(message))
         await ctx.metrics.inc('starts', user.id)
         menu_attached = False
         try:

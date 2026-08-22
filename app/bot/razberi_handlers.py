@@ -4,6 +4,7 @@ from aiogram import Router
 
 from app.bot.clarify_chat import build_chat_router
 from app.bot.clarify_context import build_context_router
+from app.bot.clarify_growth import build_growth_router
 from app.bot.clarify_media_links import build_media_links_router
 from app.bot.clarify_menu import build_menu_router
 from app.bot.clarify_start import build_start_router
@@ -22,6 +23,7 @@ def build_router(ctx) -> Router:
     # Specific routes first. Persistent menu actions are intentionally before
     # generic text/context routers so buttons never become ordinary materials.
     router.include_router(build_start_router(ctx))
+    router.include_router(build_growth_router(ctx))
     router.include_router(build_stars_router(ctx))
     router.include_router(build_support_router(ctx))
     router.include_router(build_payments_admin_router(ctx))

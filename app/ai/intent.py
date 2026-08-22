@@ -86,8 +86,24 @@ def _normalized_phrase(text: str) -> str:
 
 
 def _has_context_reference(low: str) -> bool:
-    padded = f' {low} '
-    return any(ref in padded for ref in CONTEXT_REFERENCES)
+    """Match context references as words/phrases, never as accidental substrings.
+
+    The old implementation searched strings such as ``"то "`` inside the whole
+    sentence. That made a standalone question like ``"что такое VPN?"`` look
+    contextual because ``"что такое"`` contains the characters ``"то "``.
+    """
+    normalized = re.sub(r'\s+', ' ', (low or '').strip().lower())
+    for raw in CONTEXT_REFERENCES:
+        term = raw.strip()
+        if not term:
+            continue
+        if term in {'предыдущ', 'последн'}:
+            if re.search(rf'(?<!\w){re.escape(term)}\w*', normalized, flags=re.IGNORECASE):
+                return True
+            continue
+        if re.search(rf'(?<!\w){re.escape(term)}(?!\w)', normalized, flags=re.IGNORECASE):
+            return True
+    return False
 
 
 def _looks_like_explicit_request(value: str, low: str, phrase: str) -> bool:

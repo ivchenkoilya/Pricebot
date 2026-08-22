@@ -136,3 +136,30 @@ class ErrorLog(Base):
     error_type: Mapped[str] = mapped_column(String(255))
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class UserAcquisition(Base):
+    """Immutable first-touch attribution for a Clarify user."""
+
+    __tablename__ = 'clarify_user_acquisition'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), unique=True, index=True)
+    source: Mapped[str] = mapped_column(String(64), default='direct', index=True)
+    campaign: Mapped[str | None] = mapped_column(String(128), index=True)
+    raw_payload: Mapped[str] = mapped_column(String(255), default='')
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    first_analysis_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
+
+class Referral(Base):
+    """One immutable referrer per referred user; reward is granted once."""
+
+    __tablename__ = 'clarify_referrals'
+    __table_args__ = (UniqueConstraint('referred_user_id', name='uq_clarify_referral_referred'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    referrer_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    referred_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    status: Mapped[str] = mapped_column(String(20), default='pending', index=True)
+    reward_amount: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    rewarded_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)

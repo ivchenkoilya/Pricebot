@@ -6,6 +6,7 @@ import SupportWidget from './SupportWidget'
 import PlansWidget from './PlansWidget'
 import MaterialCleanupWidget from './MaterialCleanupWidget'
 import ProfileShortcutWidget from './ProfileShortcutWidget'
+import ReferralProfileWidget from './ReferralProfileWidget'
 import UXFixesWidget from './UXFixesWidget'
 import './v1.css'
 import './v1-mobile.css'
@@ -14,6 +15,7 @@ import './plans.css'
 import './plan-badge.css'
 import './product-upgrade.css'
 import './copilot.css'
+import './referral.css'
 import './ux-fixes.css'
 
 const telegramWebApp = window.Telegram?.WebApp
@@ -30,6 +32,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
     <ProfileShortcutWidget />
+    <ReferralProfileWidget />
     <PlansWidget />
     <MaterialCleanupWidget />
     <CopilotWidget />
