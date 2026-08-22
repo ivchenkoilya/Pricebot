@@ -12,7 +12,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -39,6 +39,24 @@ if settings.cors_origin_list:
         allow_methods=['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
         allow_headers=['Authorization', 'Content-Type', 'X-Telegram-Init-Data'],
     )
+
+
+@app.middleware('http')
+async def prevent_stale_webapp_shell(request: Request, call_next):
+    """Do not let Telegram Android keep an old SPA index after redeploys.
+
+    Hashed JS/CSS assets may be cached safely, but a cached index.html can point
+    at assets from a previous Amvera image and produce the blank blue WebView
+    seen when opening Clarify from a persistent reply-keyboard button.
+    """
+    response = await call_next(request)
+    path = request.url.path.rstrip('/')
+    if path in {'/app', '/app/index.html'}:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 
 ROOT = Path(__file__).resolve().parent
 WEBAPP_DIST = ROOT / 'webapp' / 'dist'
@@ -126,6 +144,7 @@ async def main() -> None:
             BotCommand(command='examples', description='Примеры запросов'),
             BotCommand(command='summary', description='Кратко о последнем материале'),
             BotCommand(command='clear', description='Очистить контекст'),
+            BotCommand(command='stars', description='Баланс Stars (владелец)'),
         ])
     except Exception as exc:
         log.warning('Could not configure Telegram command menu: %s', exc)
