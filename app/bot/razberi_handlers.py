@@ -8,6 +8,7 @@ from app.bot.clarify_media_links import build_media_links_router
 from app.bot.clarify_menu import build_menu_router
 from app.bot.clarify_start import build_start_router
 from app.bot.clarify_support import build_support_router
+from app.bot.clarify_video import build_video_router
 from app.bot.clarify_web import build_web_router
 from app.bot.razberi_general import build_general_router
 from app.bot.razberi_materials import build_materials_router
@@ -24,6 +25,7 @@ def build_router(ctx) -> Router:
     router.include_router(build_payments_admin_router(ctx))
     router.include_router(build_menu_router(ctx))
     router.include_router(build_materials_router(ctx))
+    router.include_router(build_video_router(ctx))
     router.include_router(build_media_router(ctx))
     router.include_router(build_media_links_router(ctx))
     router.include_router(build_web_router(ctx))
