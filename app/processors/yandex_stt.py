@@ -18,13 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class YandexSpeechKitProvider:
-    """Yandex SpeechKit v3 asynchronous STT with optional local fallback.
-
-    The Kazakhstan Yandex Cloud region exposes SpeechKit STT through API v3.
-    Clarify converts Telegram/video audio to compact mono OGG Opus and sends it
-    directly in the request body. This keeps a one-hour recording comfortably
-    below the API v3 request-body limit in normal conditions.
-    """
+    """Yandex SpeechKit v3 asynchronous STT with optional local fallback."""
 
     def __init__(self, settings: Settings, fallback=None):
         self.settings = settings
@@ -47,14 +41,16 @@ class YandexSpeechKitProvider:
     def _base_url(self) -> str:
         return self.settings.yandex_speechkit_endpoint.rstrip('/')
 
+    @property
+    def _operation_base_url(self) -> str:
+        return self.settings.yandex_speechkit_operation_endpoint.rstrip('/')
+
     def _prepare_ogg(self, path: str) -> tuple[str, str]:
         temp_root = Path(self.settings.data_dir) / 'tmp'
         temp_root.mkdir(parents=True, exist_ok=True)
         folder = tempfile.mkdtemp(prefix='clarify-yandex-stt-', dir=temp_root)
         output = str(Path(folder) / 'speech.ogg')
 
-        # SpeechKit v3 accepts OGG_OPUS. 64 kbps mono keeps long Telegram
-        # recordings compact without throwing away speech detail.
         import subprocess
 
         command = [
@@ -76,7 +72,6 @@ class YandexSpeechKitProvider:
 
     @staticmethod
     def _extract_text_items(raw: str) -> list[dict]:
-        """Parse SpeechKit REST v3's sequence of JSON result messages."""
         raw = (raw or '').strip()
         if not raw:
             return []
@@ -92,7 +87,6 @@ class YandexSpeechKitProvider:
             try:
                 value, index = decoder.raw_decode(raw, index)
             except json.JSONDecodeError:
-                # Be tolerant of gateways that add an unexpected separator.
                 next_brace = raw.find('{', index + 1)
                 if next_brace < 0:
                     break
@@ -119,27 +113,30 @@ class YandexSpeechKitProvider:
             if alternatives and isinstance(alternatives[0], dict):
                 text = str(alternatives[0].get('text') or '').strip()
                 if text:
-                    cursor = message.get('audioCursors') or {}
-                    raw_index = cursor.get('finalIndex')
+                    cursor = message.get('audioCursors') or message.get('audio_cursors') or {}
+                    raw_index = cursor.get('finalIndex') if isinstance(cursor, dict) else None
+                    if raw_index is None and isinstance(cursor, dict):
+                        raw_index = cursor.get('final_index')
                     try:
                         final_index = int(raw_index) if raw_index is not None else next_final_index
                     except (TypeError, ValueError):
                         final_index = next_final_index
-                    # The cursor can refer to the most recent final; ensure later
-                    # independent finals do not overwrite earlier phrases.
                     while final_index in finals and finals[final_index] != text:
                         final_index += 1
                     finals[final_index] = text
                     next_final_index = max(next_final_index, final_index + 1)
 
-            refinement = message.get('finalRefinement') or {}
-            normalized = refinement.get('normalizedText') or {}
+            refinement = message.get('finalRefinement') or message.get('final_refinement') or {}
+            normalized = refinement.get('normalizedText') or refinement.get('normalized_text') or {}
             alternatives = normalized.get('alternatives') or []
             if alternatives and isinstance(alternatives[0], dict):
                 text = str(alternatives[0].get('text') or '').strip()
                 if text:
+                    raw_index = refinement.get('finalIndex')
+                    if raw_index is None:
+                        raw_index = refinement.get('final_index')
                     try:
-                        final_index = int(refinement.get('finalIndex') or 0)
+                        final_index = int(raw_index or 0)
                     except (TypeError, ValueError):
                         final_index = 0
                     refinements[final_index] = text
@@ -162,8 +159,7 @@ class YandexSpeechKitProvider:
             )
             lang = 'ru-RU' if language.lower().startswith('ru') else language
 
-            # Yandex's current KZ practical guide uses protobuf field names in
-            # snake_case for REST v3 requests.
+            # Protobuf REST accepts the proto field names used in Yandex examples.
             payload = {
                 'content': encoded,
                 'recognition_model': {
@@ -208,7 +204,7 @@ class YandexSpeechKitProvider:
                     if time.monotonic() >= deadline:
                         raise TimeoutError('Yandex SpeechKit слишком долго обрабатывает аудио')
                     status_response = await client.get(
-                        f'{self._base_url}/operations/{operation_id}',
+                        f'{self._operation_base_url}/operations/{operation_id}',
                         headers=self._headers,
                     )
                     status_response.raise_for_status()
