@@ -91,11 +91,13 @@ class Settings(BaseSettings):
     # datacenter IP of Amvera. Example: http://user:pass@proxy.example:8080
     media_proxy_url: str = ''
 
-    # Speech-to-text. Keep the multilingual base model for Russian quality, but
-    # use greedy decoding and short parallel chunks for much lower CPU latency.
+    # Speech-to-text. Short notes use base for quality. Long recordings switch
+    # to tiny automatically so 10–60 minute files do not pin a small CPU for ages.
     stt_provider: str = 'local'
     whisper_model: str = 'base'
     whisper_quality_floor: bool = True
+    whisper_long_model: str = 'tiny'
+    whisper_long_model_after_seconds: int = 240
     whisper_compute_type: str = 'int8'
     whisper_cpu_threads: int = 2
     whisper_num_workers: int = 2
