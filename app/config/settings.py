@@ -91,9 +91,16 @@ class Settings(BaseSettings):
     # datacenter IP of Amvera. Example: http://user:pass@proxy.example:8080
     media_proxy_url: str = ''
 
-    # Speech-to-text. Short notes use base for quality. Long recordings switch
-    # to tiny automatically so 10–60 minute files do not pin a small CPU for ages.
+    # Speech-to-text. Set STT_PROVIDER=yandex to use SpeechKit v3 and keep local
+    # Whisper as an automatic fallback if the cloud request is temporarily down.
     stt_provider: str = 'local'
+    yandex_speechkit_api_key: str = ''
+    yandex_speechkit_folder_id: str = ''
+    yandex_speechkit_endpoint: str = 'https://stt.api.ml.yandexcloud.kz'
+    yandex_speechkit_model: str = 'general'
+    yandex_speechkit_timeout: float = 300.0
+    yandex_speechkit_poll_interval: float = 1.0
+    yandex_speechkit_fallback_local: bool = True
     whisper_model: str = 'base'
     whisper_quality_floor: bool = True
     whisper_long_model: str = 'tiny'
