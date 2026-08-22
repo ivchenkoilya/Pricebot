@@ -140,7 +140,7 @@ export default function PlansWidget() {
       {error && <div className="plans-error">{error}</div>}
       {notice && <div className="plans-notice">{notice}</div>}
 
-      {catalog?.current === 'OWNER' && <section className="plans-owner"><Crown /><div><small>OWNER · РЕЖИМ ПРОВЕРКИ</small><h2>Unlimited включён</h2><p>Кнопки ниже теперь открывают настоящий Telegram Stars checkout и на аккаунте владельца. Можно проверить окно оплаты и просто закрыть его, не подтверждая покупку.</p></div></section>}
+      {catalog?.current === 'OWNER' && <section className="plans-owner"><Crown /><div><small>OWNER · ПОЛНЫЙ ДОСТУП</small><h2>Unlimited включён</h2><p>У владельца Clarify уже открыт полный доступ. При необходимости ниже можно отдельно оформить обычную платную подписку через Telegram Stars.</p></div></section>}
 
       {catalog && <div className="plans-grid">{catalog.plans.map(plan => {
         const product = plan.code === 'MAX' ? 'max' : plan.code.toLowerCase()
@@ -151,7 +151,7 @@ export default function PlansWidget() {
           <div className="plan-price">{paid ? <><b>{plan.price}</b><span>⭐ / {plan.period}</span></> : <><b>0</b><span>⭐ навсегда</span></>}</div>
           <div className="plan-reason">{plan.code === 'FREE' ? 'Полноценный старт: попробовать Clarify без оплаты и понять, насколько он экономит время.' : plan.code === 'PRO' ? 'Для ежедневной работы, учёбы и длинных материалов без постоянной остановки на бесплатном лимите.' : 'Для активного использования: большой пул запросов, Smart AI и максимум доступной работы в течение дня.'}</div>
           <ul>{plan.features.map(feature => <li key={feature}><Check />{feature}</li>)}</ul>
-          {paid && <button className="plan-buy" disabled={active || buying === product} onClick={() => void buy(product)}>{buying === product ? <LoaderCircle className="spin" /> : <Zap />}{active ? 'Тариф уже активен' : catalog.current === 'OWNER' ? `Проверить оплату · ${plan.price} ⭐` : `Подключить за ${plan.price} ⭐`}</button>}
+          {paid && <button className="plan-buy" disabled={active || buying === product} onClick={() => void buy(product)}>{buying === product ? <LoaderCircle className="spin" /> : <Zap />}{active ? 'Тариф уже активен' : `Оформить подписку · ${plan.price} ⭐`}</button>}
           {!paid && <div className="plan-free-label"><Check /> Бесплатный тариф доступен всем</div>}
         </section>
       })}</div>}
