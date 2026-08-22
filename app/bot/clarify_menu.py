@@ -36,25 +36,6 @@ from app.services.copilot import build_inbox
 from app.services.core import bonus_requests, clarify_plan
 
 
-def _miniapp_url(value: str) -> str:
-    """Return the direct HTTPS page used by Telegram Web Apps.
-
-    Amvera's public root redirects to /app/. Telegram Web Apps are more reliable
-    when the keyboard points at the final page directly instead of an HTTP
-    redirect, so normalise the production Clarify URL here as a safety net for
-    old WEBAPP_URL values already stored in Amvera.
-    """
-    url = (value or '').strip()
-    url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
-    url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
-    root = 'https://pricebot2-ivch.amvera.io'
-    if url.rstrip('/') == root:
-        return root + '/app/'
-    if url.startswith(root + '/app'):
-        return root + '/app/'
-    return url
-
-
 def build_menu_router(ctx) -> Router:
     """Single source of truth for all persistent Telegram menu actions."""
     router = Router(name='clarify-main-menu')
@@ -241,7 +222,9 @@ def build_menu_router(ctx) -> Router:
 
     @router.message(F.text == BTN_MINIAPP)
     async def miniapp_fallback(message: Message):
-        url = _miniapp_url(settings.webapp_url)
+        # This is used by legacy/stale keyboards that send text instead of
+        # opening the WebApp themselves. Use exactly the same URL as /start.
+        url = (settings.webapp_url or '').strip()
         if url.startswith('https://'):
             return await message.answer(
                 '🏠 <b>Clarify Mini App</b>\n\nНажми кнопку ниже, чтобы открыть приложение:',
