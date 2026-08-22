@@ -13,9 +13,6 @@ from app.processors.text import TextProcessor
 from app.services.core import clarify_plan, plan_voice_max_seconds
 
 
-_VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.webm', '.mkv'}
-
-
 async def _ffmpeg(*args: str) -> None:
     process = await asyncio.create_subprocess_exec(
         'ffmpeg',
@@ -77,6 +74,14 @@ def _duration_text(duration: int) -> str:
     return f'{duration // 60:02d}:{duration % 60:02d}'
 
 
+def _is_convert_only_material(material) -> bool:
+    return bool(
+        material
+        and material.type == 'video'
+        and (material.summary or '').startswith('Видео сохранено. Можно превратить его в Telegram-кружок.')
+    )
+
+
 def build_video_router(ctx) -> Router:
     router = Router(name='clarify-video')
     settings = ctx.settings
@@ -100,7 +105,7 @@ def build_video_router(ctx) -> Router:
             return await message.answer(f'⚠️ {readable_name.capitalize()} больше {settings.max_file_size_mb} МБ.')
 
         cached = await ctx.materials.by_file_unique(user.id, getattr(media, 'file_unique_id', None))
-        if cached:
+        if cached and not _is_convert_only_material(cached):
             return await message.answer(
                 '♻️ <b>Уже готово</b>\n\n' + esc(cached.summary or cached.title),
                 reply_markup=actions(cached.id, cached.type),
@@ -109,7 +114,7 @@ def build_video_router(ctx) -> Router:
         max_seconds = plan_voice_max_seconds(user, settings)
         if max_seconds is not None and duration > max_seconds:
             if not is_note:
-                material = await ctx.materials.create(
+                material = cached or await ctx.materials.create(
                     user.id,
                     'video',
                     'Видео',
@@ -131,7 +136,7 @@ def build_video_router(ctx) -> Router:
 
         if clarify_plan(user, settings) == 'FREE' and await _voice_like_count(ctx, user.id) >= settings.free_voice_daily_limit:
             if not is_note:
-                material = await ctx.materials.create(
+                material = cached or await ctx.materials.create(
                     user.id,
                     'video',
                     'Видео',
@@ -148,7 +153,7 @@ def build_video_router(ctx) -> Router:
 
         if not await ensure_quota(ctx, message, user):
             if not is_note:
-                material = await ctx.materials.create(
+                material = cached or await ctx.materials.create(
                     user.id,
                     'video',
                     'Видео',
