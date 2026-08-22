@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from app.bot.clarify_growth_middleware import GrowthConversionMiddleware
 from app.bot.razberi_handlers import build_router
 from app.bot.razberi_middlewares import RateLimitMiddleware
 from app.brand import clarify_banner_jpeg, clarify_banner_webp
@@ -143,6 +144,8 @@ async def main() -> None:
             BotCommand(command='about', description='О Clarify'),
             BotCommand(command='examples', description='Примеры запросов'),
             BotCommand(command='summary', description='Кратко о последнем материале'),
+            BotCommand(command='profile', description='Профиль и лимиты'),
+            BotCommand(command='invite', description='Пригласить друга'),
             BotCommand(command='clear', description='Очистить контекст'),
             BotCommand(command='stars', description='Баланс Stars (владелец)'),
         ])
@@ -154,8 +157,11 @@ async def main() -> None:
 
     dispatcher = Dispatcher(storage=MemoryStorage())
     limiter = RateLimitMiddleware(settings.requests_per_minute, settings.max_active_jobs_per_user)
+    growth_conversion = GrowthConversionMiddleware(ctx)
     dispatcher.message.outer_middleware(limiter)
+    dispatcher.message.outer_middleware(growth_conversion)
     dispatcher.callback_query.outer_middleware(limiter)
+    dispatcher.callback_query.outer_middleware(growth_conversion)
     dispatcher.include_router(build_router(ctx))
 
     scheduler = AsyncIOScheduler(timezone='UTC')
