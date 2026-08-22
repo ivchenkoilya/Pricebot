@@ -1,0 +1,154 @@
+.referral-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(111, 157, 255, 0.18);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(99, 138, 255, 0.18), transparent 42%),
+    linear-gradient(150deg, rgba(12, 29, 61, 0.96), rgba(8, 20, 43, 0.96));
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.2);
+}
+
+.referral-head {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+}
+
+.referral-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #dce7ff;
+  background: rgba(100, 139, 255, 0.16);
+  border: 1px solid rgba(126, 160, 255, 0.2);
+}
+
+.referral-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.referral-head h3 {
+  margin: 4px 0 5px;
+  font-size: 19px;
+  line-height: 1.15;
+}
+
+.referral-head p {
+  margin: 0;
+  color: rgba(230, 237, 252, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.referral-head p b {
+  color: #f3f6ff;
+}
+
+.referral-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.referral-stats > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 12px 10px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.referral-stats svg,
+.referral-plus {
+  width: 16px;
+  height: 16px;
+  color: rgba(181, 202, 255, 0.92);
+}
+
+.referral-plus {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 16px;
+}
+
+.referral-stats small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(222, 232, 250, 0.58);
+  font-size: 10px;
+}
+
+.referral-stats b {
+  color: #f7f9ff;
+  font-size: 18px;
+}
+
+.referral-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.referral-actions button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.referral-actions button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.referral-primary {
+  color: #071125;
+  background: linear-gradient(135deg, #f5f8ff, #c9d8ff);
+}
+
+.referral-copy {
+  padding-inline: 14px;
+  color: rgba(235, 241, 255, 0.9);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.referral-actions button:active {
+  transform: translateY(1px);
+}
+
+.referral-note {
+  color: rgba(218, 228, 248, 0.45);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+@media (max-width: 380px) {
+  .referral-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .referral-copy {
+    width: 100%;
+  }
+}
