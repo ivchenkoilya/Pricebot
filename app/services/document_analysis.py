@@ -110,11 +110,31 @@ async def analyze_and_store_document(ctx, user, path: str, suffix: str, filename
             'Документ прочитан и сохранён. AI-анализ не успел ответить вовремя.',
         )
         logger.warning(
-            'webapp_document_timeout type=%s chars=%d pages=%s estimated_pages=%s total_ms=%d',
+            'webapp_document_timeout type=%s chars=%d pages=%s estimated_pages=%s ai_requests=%d total_ms=%d',
             suffix.lstrip('.'),
             len(text),
             extraction.pages,
             extraction.estimated_pages,
+            1 + ocr_requests,
+            int((time.perf_counter() - started) * 1000),
+        )
+        return item
+    except Exception as exc:
+        item = await ctx.materials.create(
+            user.id,
+            extraction.kind,
+            filename,
+            text,
+            'Документ прочитан и сохранён, но AI-анализ временно недоступен.',
+        )
+        logger.warning(
+            'webapp_document_ai_failed type=%s error=%s chars=%d pages=%s estimated_pages=%s ai_requests=%d total_ms=%d',
+            suffix.lstrip('.'),
+            type(exc).__name__,
+            len(text),
+            extraction.pages,
+            extraction.estimated_pages,
+            1 + ocr_requests,
             int((time.perf_counter() - started) * 1000),
         )
         return item
