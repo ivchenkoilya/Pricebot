@@ -5,12 +5,15 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, W
 
 from app.bot.razberi_helpers import get_user
 from app.bot.razberi_keyboards import (
+    BTN_BACK,
     BTN_MEMORY,
     BTN_MORE,
     BTN_PROFILE,
     LEGACY_MEMORY,
     LEGACY_MEMORY_RU,
+    main_menu,
     materials_list,
+    more_menu,
     quick_webapp_url,
 )
 
@@ -49,15 +52,18 @@ def build_prelaunch_menu_router(ctx) -> Router:
 
     @router.message(F.text == BTN_MORE)
     async def more_fallback(message: Message):
-        url = quick_webapp_url(ctx.settings.webapp_url, 'profile')
-        if url.startswith('https://'):
-            return await message.answer(
-                '••• <b>Ещё</b>\n\n'
-                'Редкие функции, настройки и поддержка находятся в профиле Clarify.',
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text='Открыть профиль', web_app=WebAppInfo(url=url)),
-                ]]),
-            )
-        await message.answer('Дополнительные функции: /help · /profile · /invite · /clear')
+        await message.answer(
+            '••• <b>Дополнительные функции</b>\n\n'
+            'Здесь остались проекты, сравнение, поддержка, настройки и очистка. '
+            'Основное меню остаётся коротким.',
+            reply_markup=more_menu(ctx.settings.webapp_url),
+        )
+
+    @router.message(F.text == BTN_BACK)
+    async def back_to_main(message: Message):
+        await message.answer(
+            'Готово — вернул основное меню.',
+            reply_markup=main_menu(ctx.settings.webapp_url),
+        )
 
     return router
