@@ -12,6 +12,7 @@ from app.bot.clarify_start import build_start_router
 from app.bot.clarify_stars import build_stars_router
 from app.bot.clarify_support import build_support_router
 from app.bot.clarify_video import build_video_router
+from app.bot.clarify_voice import build_voice_router
 from app.bot.clarify_web import build_web_router
 from app.bot.razberi_general import build_general_router
 from app.bot.razberi_materials import build_materials_router
@@ -32,6 +33,9 @@ def build_router(ctx) -> Router:
     router.include_router(build_menu_router(ctx))
     router.include_router(build_materials_router(ctx))
     router.include_router(build_video_router(ctx))
+    # Voice/audio goes through the dedicated multilingual handler before the
+    # generic media router so the user sees transcription first, then analysis.
+    router.include_router(build_voice_router(ctx))
     router.include_router(build_media_router(ctx))
     router.include_router(build_media_links_router(ctx))
     router.include_router(build_web_router(ctx))
