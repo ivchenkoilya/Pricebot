@@ -1,6 +1,7 @@
 import pytest
 
 import main
+from app.webapp.analytics import router as analytics_router
 from app.webapp.api import router as core_router
 from app.webapp.copilot import router as copilot_router
 from app.webapp.memory import router as memory_router
@@ -19,6 +20,8 @@ def test_webapp_routes_are_registered():
     assert '/api/pro/invoice' in core_paths
 
     assert '/api/memory/ask' in _paths(memory_router)
+    assert '/api/analytics/event' in _paths(analytics_router)
+    assert '/api/analytics/admin/overview' in _paths(analytics_router)
     assert _paths(copilot_router)
 
     app_paths = {path for route in main.app.routes if (path := getattr(route, 'path', None))}
