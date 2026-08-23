@@ -46,7 +46,7 @@ HELP_TEXT = (
     '🧠 <b>Материалы</b> — найти старый разбор или спросить по сохранённой информации.\n\n'
     '👤 <b>Профиль</b> — лимиты, тариф, бонусы и приглашения.\n\n'
     'Если что-то не работает, открой <b>Профиль → Помощь и поддержка</b>.\n\n'
-    '<small>Команды: /start · /profile · /invite · /clear</small>'
+    'Команды: <code>/start</code> · <code>/profile</code> · <code>/invite</code> · <code>/clear</code>'
 )
 
 ABOUT_TEXT = (
