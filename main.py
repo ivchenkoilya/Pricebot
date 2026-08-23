@@ -138,16 +138,14 @@ async def main() -> None:
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     _bot_initialized = True
     try:
+        # Keep the slash-command drawer short. Advanced/admin commands continue
+        # to work when typed directly but do not distract a new user.
         await bot.set_my_commands([
             BotCommand(command='start', description='Начать работу'),
-            BotCommand(command='help', description='Помощь'),
-            BotCommand(command='about', description='О Clarify'),
-            BotCommand(command='examples', description='Примеры запросов'),
-            BotCommand(command='summary', description='Кратко о последнем материале'),
             BotCommand(command='profile', description='Профиль и лимиты'),
             BotCommand(command='invite', description='Пригласить друга'),
-            BotCommand(command='clear', description='Очистить контекст'),
-            BotCommand(command='stars', description='Баланс Stars (владелец)'),
+            BotCommand(command='help', description='Помощь'),
+            BotCommand(command='clear', description='Новая тема'),
         ])
     except Exception as exc:
         log.warning('Could not configure Telegram command menu: %s', exc)
