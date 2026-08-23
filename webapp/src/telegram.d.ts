@@ -15,6 +15,7 @@ declare global {
         setBackgroundColor?: (color: string) => void
         openInvoice?: (url: string, callback?: (status: string) => void) => void
         openLink?: (url: string) => void
+        openTelegramLink?: (url: string) => void
         HapticFeedback?: {
           impactOccurred?: (style: 'light' | 'medium' | 'heavy') => void
           notificationOccurred?: (type: 'error' | 'success' | 'warning') => void
