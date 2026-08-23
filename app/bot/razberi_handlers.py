@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from aiogram import Router
 
+from app.bot.clarify_broadcast import build_broadcast_router
 from app.bot.clarify_chat import build_chat_router
 from app.bot.clarify_context import build_context_router
 from app.bot.clarify_growth import build_growth_router
@@ -28,6 +29,7 @@ def build_router(ctx) -> Router:
     router.include_router(build_growth_router(ctx))
     router.include_router(build_stars_router(ctx))
     router.include_router(build_support_router(ctx))
+    router.include_router(build_broadcast_router(ctx))
     router.include_router(build_payments_admin_router(ctx))
     router.include_router(build_prelaunch_menu_router(ctx))
     router.include_router(build_menu_router(ctx))
