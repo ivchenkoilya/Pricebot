@@ -144,6 +144,7 @@ async def main() -> None:
             BotCommand(command='start', description='Начать работу'),
             BotCommand(command='profile', description='Профиль и лимиты'),
             BotCommand(command='invite', description='Пригласить друга'),
+            BotCommand(command='support', description='Связаться с поддержкой'),
             BotCommand(command='help', description='Помощь'),
             BotCommand(command='clear', description='Новая тема'),
         ])
