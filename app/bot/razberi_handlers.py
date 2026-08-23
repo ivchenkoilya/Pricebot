@@ -9,6 +9,7 @@ from app.bot.clarify_documents import build_document_router
 from app.bot.clarify_growth import build_growth_router
 from app.bot.clarify_media_links import build_media_links_router
 from app.bot.clarify_menu import build_menu_router
+from app.bot.clarify_precise_qa import build_precise_qa_router
 from app.bot.clarify_prelaunch_menu import build_prelaunch_menu_router
 from app.bot.clarify_start import build_start_router
 from app.bot.clarify_stars import build_stars_router
@@ -24,8 +25,8 @@ from app.bot.razberi_payments_admin import build_payments_admin_router
 
 def build_router(ctx) -> Router:
     router = Router(name='razberi')
-    # Specific routes first. Persistent menu actions are intentionally before
-    # generic text/context routers so buttons never become ordinary materials.
+    # Support is intentionally ahead of every generic/media route: while the
+    # support FSM is active, user messages are transport and must never reach AI.
     router.include_router(build_start_router(ctx))
     router.include_router(build_growth_router(ctx))
     router.include_router(build_stars_router(ctx))
@@ -34,6 +35,8 @@ def build_router(ctx) -> Router:
     router.include_router(build_payments_admin_router(ctx))
     router.include_router(build_prelaunch_menu_router(ctx))
     router.include_router(build_menu_router(ctx))
+    # Exact material questions use the improved retrieval/concise-answer path.
+    router.include_router(build_precise_qa_router(ctx))
     router.include_router(build_materials_router(ctx))
     router.include_router(build_video_router(ctx))
     # Voice/audio goes through the dedicated multilingual handler before the
