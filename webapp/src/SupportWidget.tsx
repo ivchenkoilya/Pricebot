@@ -1,4 +1,4 @@
-import { FormEvent, useState, type ReactNode } from 'react'
+import { FormEvent, useEffect, useState, type ReactNode } from 'react'
 import { Bug, Check, Image as ImageIcon, LifeBuoy, Lightbulb, MessageCircle, Send, X } from 'lucide-react'
 import { api, apiForm, haptic, hasTelegramAuth, successHaptic } from './api'
 
@@ -19,6 +19,16 @@ export default function SupportWidget() {
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const openSupport = () => {
+      setSent(false)
+      setError('')
+      setOpen(true)
+    }
+    window.addEventListener('clarify:open-support', openSupport)
+    return () => window.removeEventListener('clarify:open-support', openSupport)
+  }, [])
 
   if (!hasTelegramAuth()) return null
 
@@ -77,6 +87,8 @@ export default function SupportWidget() {
           <div><small>CLARIFY SUPPORT</small><h2>Связаться с поддержкой</h2></div>
           <button onClick={close} aria-label="Закрыть"><X /></button>
         </header>
+
+        <div className="support-beta-note">🧪 Clarify находится в разработке. Если что-то работает нестабильно — напиши сюда, обращение уйдёт напрямую в поддержку и не будет анализироваться AI.</div>
 
         {sent ? <div className="support-success">
           <span><Check /></span>
