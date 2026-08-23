@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import html
+import time
 import uuid
+from collections import defaultdict, deque
 from types import SimpleNamespace
 
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from app.services.core import is_active_pro, is_creator
+from app.services.core import clarify_plan
 from app.webapp.auth import TelegramWebAppUser, runtime_context, telegram_webapp_user
 
 
@@ -20,6 +22,10 @@ CATEGORY_LABELS = {
     'question': '🛟 Поддержка',
     'other': '💬 Сообщение',
 }
+
+SUPPORT_WINDOW_SECONDS = 10 * 60
+SUPPORT_WINDOW_LIMIT = 5
+_SUPPORT_EVENTS: dict[int, deque[float]] = defaultdict(deque)
 
 
 class SupportBody(BaseModel):
@@ -34,23 +40,36 @@ def _tg_namespace(tg: TelegramWebAppUser):
 
 def _reply_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='💬 Ответить пользователю', callback_data=f'supportreply:{telegram_id}')
+        InlineKeyboardButton(text='↩️ Ответить', callback_data=f'supportreply:{telegram_id}')
     ]])
+
+
+def _allow_support(user_id: int) -> bool:
+    now = time.monotonic()
+    queue = _SUPPORT_EVENTS[int(user_id)]
+    while queue and now - queue[0] > SUPPORT_WINDOW_SECONDS:
+        queue.popleft()
+    if len(queue) >= SUPPORT_WINDOW_LIMIT:
+        return False
+    queue.append(now)
+    return True
 
 
 def _support_text(*, tg: TelegramWebAppUser, user, settings, kind: str, message: str, page: str | None) -> str:
     label = CATEGORY_LABELS.get(kind, CATEGORY_LABELS['other'])
     username = f'@{tg.username}' if tg.username else 'не указан'
-    plan = 'OWNER' if is_creator(user, settings) else ('PRO' if is_active_pro(user) else 'FREE')
+    plan = clarify_plan(user, settings)
     page_text = (page or 'не указана').strip()[:120]
     return (
-        f'<b>🛟 Clarify · {label}</b>\n\n'
+        f'<b>🛟 Новое обращение в поддержку</b>\n\n'
+        f'<b>Тип:</b> {html.escape(label)}\n'
         f'<b>Пользователь:</b> <a href="tg://user?id={tg.id}">{html.escape(tg.first_name or "User")}</a>\n'
         f'<b>Username:</b> {html.escape(username)}\n'
         f'<b>Telegram ID:</b> <code>{tg.id}</code>\n'
-        f'<b>Тариф:</b> {html.escape(plan)}\n'
+        f'<b>План:</b> {html.escape(plan)}\n'
         f'<b>Версия:</b> {html.escape(settings.version)}\n'
-        f'<b>Экран:</b> {html.escape(page_text)}\n\n'
+        f'<b>Экран:</b> {html.escape(page_text)}\n'
+        f'<b>Источник:</b> Mini App\n\n'
         f'<b>Сообщение:</b>\n{html.escape(message.strip())}'
     )
 
@@ -60,6 +79,8 @@ async def _deliver(request: Request, tg: TelegramWebAppUser, *, kind: str, messa
     admin_id = ctx.settings.admin_telegram_id
     if not admin_id:
         raise HTTPException(503, 'Поддержка пока не настроена. Попробуй позже.')
+    if not _allow_support(tg.id):
+        raise HTTPException(429, 'Слишком много сообщений подряд. Подожди немного и попробуй снова.')
 
     user = await ctx.users.upsert(_tg_namespace(tg))
     text = _support_text(tg=tg, user=user, settings=ctx.settings, kind=kind, message=message, page=page)
@@ -84,9 +105,10 @@ async def _deliver(request: Request, tg: TelegramWebAppUser, *, kind: str, messa
                     BufferedInputFile(screenshot, filename=filename or 'screenshot.jpg'),
                     caption=f'📎 Вложение к обращению от {tg.id}',
                 )
+        await ctx.metrics.inc('support_sent', user.id)
         await ctx.metrics.inc('support_submitted', user.id)
     except Exception as exc:
-        await ctx.errors.record(request_id, tg.id, 'support_submit', exc)
+        await ctx.errors.record(request_id, tg.id, 'support_send_failed', exc)
         raise HTTPException(502, 'Не получилось отправить обращение. Попробуй ещё раз.') from exc
 
     return {'ok': True, 'request_id': request_id}
