@@ -13,33 +13,29 @@ from aiogram.types import (
 
 BTN_UNPACK = '📎 Разобрать'
 BTN_WRITE = '✍️ Написать'
-BTN_MEMORY = '🧠 Memory'
+BTN_MEMORY = '🧠 Материалы'
 BTN_COMPARE = '🔀 Сравнить'
 BTN_PROJECTS = '📁 Проекты'
-BTN_INBOX = '✨ AI Inbox'
+BTN_INBOX = '✨ Важное'
 BTN_PLANS = '💎 Тарифы'
 BTN_SUPPORT = '🛟 Поддержка'
 BTN_SETTINGS = '⚙️ Настройки'
 BTN_CLEAR = '🗑 Очистить'
 BTN_HELP = '❓ Помощь'
-BTN_MINIAPP = '🏠 Mini App'
+BTN_MINIAPP = '🏠 Clarify'
+BTN_PROFILE = '👤 Профиль'
+BTN_MORE = '••• Ещё'
 
-# Kept temporarily so users with an old persistent Telegram keyboard do not
-# lose functionality before /start refreshes it.
-LEGACY_MEMORY = '🧠 Мои материалы'
+# Old persistent Telegram keyboards can survive a deploy. Keep their labels
+# routable even though the new menu no longer shows them.
+LEGACY_MEMORY = '🧠 Memory'
+LEGACY_MEMORY_RU = '🧠 Мои материалы'
 LEGACY_SUPPORT = '🛟 Поддержка / сообщить об ошибке'
 LEGACY_CLEAR = '🗑 Очистить материалы'
 
 
-def quick_webapp_url(webapp_url: str = '') -> str:
-    """Build a direct, cache-busted URL for Telegram reply-keyboard WebApps.
-
-    Telegram Android can keep a stale WebView document for persistent reply
-    keyboard buttons. The /start inline WebApp opens a fresh view, which is why
-    it could work while the bottom Mini App button showed only the blue
-    background. Point the quick button straight at /app/ on Amvera and add a
-    launch version so Telegram must request a fresh document.
-    """
+def quick_webapp_url(webapp_url: str = '', page: str | None = None) -> str:
+    """Build a cache-busted Mini App URL and optionally deep-link to a page."""
     url = (webapp_url or '').strip()
     url = url.replace('http://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
     url = url.replace('https://pricebot2.ivch.amvera.io', 'https://pricebot2-ivch.amvera.io')
@@ -53,24 +49,26 @@ def quick_webapp_url(webapp_url: str = '') -> str:
 
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query['launch'] = 'keyboard'
-    query['v'] = '20260822-4'
+    query['v'] = '20260823-1'
+    if page:
+        query['page'] = page
     return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
 
 
-def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
-    mini_app = KeyboardButton(text=BTN_MINIAPP)
-    url = quick_webapp_url(webapp_url)
+def _webapp_button(text: str, webapp_url: str, page: str) -> KeyboardButton:
+    url = quick_webapp_url(webapp_url, page)
     if url.startswith('https://'):
-        mini_app = KeyboardButton(text=BTN_MINIAPP, web_app=WebAppInfo(url=url))
+        return KeyboardButton(text=text, web_app=WebAppInfo(url=url))
+    return KeyboardButton(text=text)
 
+
+def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
+    """Compact six-action menu. Rare tools live behind the Mini App profile/tools screen."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_UNPACK), KeyboardButton(text=BTN_WRITE)],
-            [KeyboardButton(text=BTN_MEMORY), KeyboardButton(text=BTN_INBOX)],
-            [KeyboardButton(text=BTN_PROJECTS), KeyboardButton(text=BTN_COMPARE)],
-            [KeyboardButton(text=BTN_PLANS), KeyboardButton(text=BTN_SUPPORT)],
-            [KeyboardButton(text=BTN_SETTINGS), KeyboardButton(text=BTN_CLEAR)],
-            [KeyboardButton(text=BTN_HELP), mini_app],
+            [KeyboardButton(text=BTN_MEMORY), _webapp_button(BTN_PROFILE, webapp_url, 'profile')],
+            [KeyboardButton(text=BTN_PLANS), _webapp_button(BTN_MORE, webapp_url, 'tools')],
         ],
         resize_keyboard=True,
         input_field_placeholder='Сообщение или материал…',
@@ -90,33 +88,39 @@ def plans_keyboard(settings) -> InlineKeyboardMarkup:
 
 
 def actions(material_id: int, material_type: str = '') -> InlineKeyboardMarkup:
-    type_low = (material_type or '').lower()
+    """Show only actions that make sense for this material; rare actions stay below."""
+    low = (material_type or '').lower()
     rows: list[list[InlineKeyboardButton]] = []
-    if type_low == 'video':
+    if low == 'video':
         rows.append([InlineKeyboardButton(text='⭕ Сделать кружок', callback_data=f'circle:{material_id}')])
 
-    rows += [
-        [
-            InlineKeyboardButton(text='⚡ Кратко', callback_data=f'mat:{material_id}:summary'),
-            InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'),
-        ],
-        [
-            InlineKeyboardButton(text='🧠 Простыми словами', callback_data=f'mat:{material_id}:plain'),
-            InlineKeyboardButton(text='✅ Что делать', callback_data=f'mat:{material_id}:tasks'),
-        ],
-    ]
-    if type_low in {'pdf', 'docx', 'txt', 'md', 'xlsx', 'csv', 'document'}:
+    rows.append([InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')])
+    if low in {'image', 'photo', 'screenshot'}:
+        rows.append([
+            InlineKeyboardButton(text='📌 Детали', callback_data=f'mat:{material_id}:main'),
+            InlineKeyboardButton(text='🧠 Объяснить', callback_data=f'mat:{material_id}:plain'),
+        ])
+    elif low in {'pdf', 'docx', 'txt', 'md', 'xlsx', 'csv', 'document', 'spreadsheet'}:
         rows += [
-            [InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'), InlineKeyboardButton(text='💰 Деньги', callback_data=f'mat:{material_id}:money')],
-            [InlineKeyboardButton(text='📅 Сроки', callback_data=f'mat:{material_id}:dates'), InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')],
+            [InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'), InlineKeyboardButton(text='✅ Что делать', callback_data=f'mat:{material_id}:tasks')],
+            [InlineKeyboardButton(text='📅 Сроки', callback_data=f'mat:{material_id}:dates'), InlineKeyboardButton(text='💰 Суммы', callback_data=f'mat:{material_id}:money')],
+            [InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks')],
         ]
-    elif type_low in {'voice', 'audio', 'forwarded', 'video', 'video_note'}:
+    elif low in {'voice', 'audio', 'video', 'video_note'}:
         rows += [
-            [InlineKeyboardButton(text='🎯 Что от меня хотят?', callback_data=f'mat:{material_id}:wants'), InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply')],
-            [InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'), InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')],
+            [InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'), InlineKeyboardButton(text='✅ Задачи', callback_data=f'mat:{material_id}:tasks')],
+            [InlineKeyboardButton(text='🎯 Что от меня хотят', callback_data=f'mat:{material_id}:wants'), InlineKeyboardButton(text='📅 Сроки', callback_data=f'mat:{material_id}:dates')],
+        ]
+    elif low in {'forwarded', 'text'}:
+        rows += [
+            [InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'), InlineKeyboardButton(text='🎯 Что от меня хотят', callback_data=f'mat:{material_id}:wants')],
+            [InlineKeyboardButton(text='✍️ Ответить', callback_data=f'mat:{material_id}:reply')],
         ]
     else:
-        rows += [[InlineKeyboardButton(text='⚠️ Риски', callback_data=f'mat:{material_id}:risks'), InlineKeyboardButton(text='❓ Задать вопрос', callback_data=f'mat:{material_id}:ask')]]
+        rows.append([
+            InlineKeyboardButton(text='📌 Главное', callback_data=f'mat:{material_id}:main'),
+            InlineKeyboardButton(text='✅ Что делать', callback_data=f'mat:{material_id}:tasks'),
+        ])
 
     rows += [
         [InlineKeyboardButton(text='📤 Поделиться', callback_data=f'share:{material_id}')],
