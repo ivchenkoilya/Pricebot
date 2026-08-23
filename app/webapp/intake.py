@@ -16,9 +16,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.database.razberi_models import Material, Project, Reminder
-from app.processors.documents import DocumentTooLarge, extract_document
+from app.processors.documents import DocumentTooLarge
 from app.processors.text import TextProcessor
 from app.services.core import bonus_requests, plan_document_max_pages, plan_voice_max_seconds
+from app.services.document_analysis import analyze_and_store_document
 from app.services.growth import build_referral_link
 from app.services.media_downloader import MediaDownloadError, is_media_url
 from app.webapp.auth import TelegramWebAppUser, runtime_context, telegram_webapp_user
@@ -223,16 +224,18 @@ async def intake_file(request: Request, file: UploadFile = File(...), tg: Telegr
             return await _analyze_and_store(ctx, user, transcript, 'аудио', 'audio', 'audio')
 
         if suffix in DOCUMENT_SUFFIXES:
-            max_pages = plan_document_max_pages(user, ctx.settings)
             try:
-                extracted, _pages, material_type = extract_document(str(temp_path), suffix, max_pages)
+                item = await analyze_and_store_document(ctx, user, str(temp_path), suffix, filename)
             except DocumentTooLarge as exc:
                 raise HTTPException(413, f'{exc}. Более высокий лимит доступен во вкладке «Тарифы».') from exc
+            except ValueError as exc:
+                raise HTTPException(400, str(exc) or 'В документе не удалось найти текст') from exc
             except Exception as exc:
-                raise HTTPException(400, 'Не получилось прочитать этот документ') from exc
-            extracted = (extracted or '').strip()
-            if not extracted: raise HTTPException(400, 'В документе не удалось найти текст')
-            return await _analyze_and_store(ctx, user, extracted, f'документ {filename}', material_type, 'document')
+                await ctx.errors.record(uuid.uuid4().hex, tg.id, 'webapp_intake_document', exc)
+                raise HTTPException(502, 'Clarify временно не смог обработать документ') from exc
+            await ctx.metrics.inc('material_open', user.id)
+            await _sync_referral_after_success(ctx, user)
+            return _material_payload(item)
 
         raise HTTPException(415, 'Поддерживаются изображения, аудио, PDF, DOCX, TXT, MD, XLSX и CSV')
     finally:
