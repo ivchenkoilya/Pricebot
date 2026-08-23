@@ -9,7 +9,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.models import Base, User
-from app.database.razberi_models import ErrorLog, RazberiPayment, Referral, UserAcquisition
+from app.database.razberi_models import ErrorLog, Material, Metric, RazberiPayment, Referral, UserAcquisition
 from app.services.core import is_creator
 from app.webapp.auth import TelegramWebAppUser, runtime_context, telegram_webapp_user
 
@@ -130,16 +130,29 @@ async def analytics_admin_overview(
         new_7d = int((await db.execute(select(func.count(UserAcquisition.id)).where(UserAcquisition.first_seen_at >= week))).scalar_one() or 0)
         registrations = int((await db.execute(select(func.count(UserAcquisition.id)))).scalar_one() or 0)
         first_analyses = int((await db.execute(select(func.count(UserAcquisition.id)).where(UserAcquisition.first_analysis_at.is_not(None)))).scalar_one() or 0)
-        mini_app_opens = int((await db.execute(select(func.count(AnalyticsEvent.id)).where(AnalyticsEvent.name == 'open_mini_app', AnalyticsEvent.created_at >= week))).scalar_one() or 0)
-        success_7d = int((await db.execute(select(func.count(AnalyticsEvent.id)).where(AnalyticsEvent.name == 'analysis_success', AnalyticsEvent.created_at >= week))).scalar_one() or 0)
-        failed_7d = int((await db.execute(select(func.count(AnalyticsEvent.id)).where(AnalyticsEvent.name == 'analysis_failed', AnalyticsEvent.created_at >= week))).scalar_one() or 0)
+
+        # Use server-side facts for the headline dashboard so mobile WebView
+        # closures or flaky client analytics cannot make launch numbers lie.
+        mini_app_opens = int((await db.execute(
+            select(func.coalesce(func.sum(Metric.value), 0)).where(Metric.name == 'webapp_open', Metric.created_at >= week)
+        )).scalar_one() or 0)
+        success_7d = int((await db.execute(
+            select(func.count(Material.id)).where(Material.created_at >= week, Material.status == 'ready')
+        )).scalar_one() or 0)
+        failed_7d = int((await db.execute(
+            select(func.count(AnalyticsEvent.id)).where(AnalyticsEvent.name == 'analysis_failed', AnalyticsEvent.created_at >= week)
+        )).scalar_one() or 0)
         avg_processing = int((await db.execute(select(func.coalesce(func.avg(AnalyticsEvent.processing_time_ms), 0)).where(
             AnalyticsEvent.name.in_(['material_upload_success', 'analysis_success']),
             AnalyticsEvent.processing_time_ms.is_not(None),
             AnalyticsEvent.created_at >= week,
         ))).scalar_one() or 0)
-        payment_started = int((await db.execute(select(func.count(AnalyticsEvent.id)).where(AnalyticsEvent.name == 'payment_started', AnalyticsEvent.created_at >= week))).scalar_one() or 0)
-        payment_success = int((await db.execute(select(func.count(AnalyticsEvent.id)).where(AnalyticsEvent.name == 'payment_success', AnalyticsEvent.created_at >= week))).scalar_one() or 0)
+        payment_started = int((await db.execute(
+            select(func.coalesce(func.sum(Metric.value), 0)).where(Metric.name == 'plans_purchase_click', Metric.created_at >= week)
+        )).scalar_one() or 0)
+        payment_success = int((await db.execute(
+            select(func.count(RazberiPayment.id)).where(RazberiPayment.created_at >= week, RazberiPayment.status == 'paid')
+        )).scalar_one() or 0)
         stars_30d = int((await db.execute(select(func.coalesce(func.sum(RazberiPayment.amount), 0)).where(
             RazberiPayment.created_at >= month,
             RazberiPayment.status == 'paid',
@@ -149,10 +162,10 @@ async def analytics_admin_overview(
         referral_invited = int((await db.execute(select(func.count(Referral.id)))).scalar_one() or 0)
         referral_activated = int((await db.execute(select(func.count(Referral.id)).where(Referral.status == 'rewarded'))).scalar_one() or 0)
         type_rows = (await db.execute(
-            select(AnalyticsEvent.material_type, func.count(AnalyticsEvent.id))
-            .where(AnalyticsEvent.name == 'analysis_success', AnalyticsEvent.material_type.is_not(None), AnalyticsEvent.created_at >= week)
-            .group_by(AnalyticsEvent.material_type)
-            .order_by(func.count(AnalyticsEvent.id).desc())
+            select(Material.type, func.count(Material.id))
+            .where(Material.created_at >= week, Material.status == 'ready')
+            .group_by(Material.type)
+            .order_by(func.count(Material.id).desc())
         )).all()
         source_rows = (await db.execute(
             select(UserAcquisition.source, func.count(UserAcquisition.id))
