@@ -8,6 +8,7 @@ from statistics import mean
 
 import fitz
 from docx import Document
+from docx.oxml.ns import qn
 from openpyxl import load_workbook
 
 
@@ -31,18 +32,58 @@ def extract_pdf(path: str, max_pages: int) -> tuple[str, int]:
         doc.close()
 
 
-def extract_docx(path: str) -> str:
+def _paragraph_page_breaks(paragraph) -> int:
+    count = 0
+    for node in paragraph._p.iter(qn('w:br')):
+        if node.get(qn('w:type')) == 'page':
+            count += 1
+    # Word may also store a rendered page break from pagination. Treat it as a
+    # page boundary only when it is explicitly present in the document XML.
+    count += sum(1 for _ in paragraph._p.iter(qn('w:lastRenderedPageBreak')))
+    return count
+
+
+def extract_docx_with_page_info(path: str) -> tuple[str, int | None]:
+    """Extract DOCX text and preserve explicit page boundaries when available.
+
+    DOCX normally has no authoritative page count because pagination depends on
+    Word/LibreOffice rendering. But explicit page breaks are deterministic and
+    are common in generated contracts/reports. When present, we emit
+    [Страница N] markers so retrieval can cite the correct page and return the
+    explicit page count. Without explicit breaks the count remains unknown.
+    """
     doc = Document(path)
     parts: list[str] = []
+    page = 1
+    explicit_breaks = 0
+    parts.append('[Страница 1]')
+
     for paragraph in doc.paragraphs:
         text = paragraph.text.strip()
         if text:
             parts.append(text)
+        breaks = _paragraph_page_breaks(paragraph)
+        for _ in range(breaks):
+            explicit_breaks += 1
+            page += 1
+            parts.append(f'[Страница {page}]')
+
+    # python-docx exposes tables separately from paragraph flow. We keep them
+    # after the body as before; page-level retrieval for table-heavy DOCX is a
+    # separate rendering concern, but ordinary generated/page-broken DOCX now
+    # gets precise markers for all paragraph text.
     for table_index, table in enumerate(doc.tables, 1):
         parts.append(f'[Таблица {table_index}]')
         for row in table.rows:
             parts.append(' | '.join(cell.text.strip() for cell in row.cells))
-    return '\n'.join(parts)
+
+    explicit_pages = explicit_breaks + 1 if explicit_breaks else None
+    return '\n'.join(parts), explicit_pages
+
+
+def extract_docx(path: str) -> str:
+    text, _pages = extract_docx_with_page_info(path)
+    return text
 
 
 def extract_text(path: str) -> str:
@@ -108,7 +149,10 @@ def extract_document(path: str, ext: str, max_pages: int):
         text, pages = extract_pdf(path, max_pages)
         return text, pages, 'pdf'
     if ext == '.docx':
-        return extract_docx(path), None, 'docx'
+        text, pages = extract_docx_with_page_info(path)
+        if pages is not None and pages > max_pages:
+            raise DocumentTooLarge(f'DOCX: {pages} стр., лимит {max_pages}')
+        return text, pages, 'docx'
     if ext in {'.txt', '.md'}:
         return extract_text(path), None, 'text'
     if ext == '.xlsx':
