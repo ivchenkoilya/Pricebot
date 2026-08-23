@@ -52,24 +52,72 @@ function localizePayload<T>(path: string, payload: T): T {
   return payload
 }
 
+function requestTimeout(path: string, method: string) {
+  if (path.startsWith('/api/analytics/')) return 6_000
+  if (path === '/api/intake/file') return 420_000
+  if (path.startsWith('/api/intake/')) return 150_000
+  if (path.includes('/ask') || path.includes('/action') || path.includes('/full') || path === '/api/compose' || path === '/api/rewrite') return 150_000
+  return method === 'GET' ? 30_000 : 90_000
+}
+
+async function sleep(ms: number) {
+  await new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
 async function request<T>(path: string, init: RequestInit = {}, json = true): Promise<T> {
   const initData = tg()?.initData || ''
   const headers = new Headers(init.headers || {})
   if (json && init.body !== undefined) headers.set('Content-Type', 'application/json')
   if (initData) headers.set('Authorization', `tma ${initData}`)
-  const response = await fetch(path, { ...init, headers })
-  if (!response.ok) {
-    let message = 'Не получилось выполнить действие'
+
+  const method = (init.method || 'GET').toUpperCase()
+  // Only idempotent reads are retried. POSTing an AI request twice could cost
+  // tokens or create duplicate materials, so writes never retry automatically.
+  const attempts = method === 'GET' ? 2 : 1
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), requestTimeout(path, method))
     try {
-      const body = await response.json()
-      if (body?.detail) message = localizeText(String(body.detail))
-    } catch {
-      // keep friendly fallback
+      const response = await fetch(path, { ...init, headers, signal: controller.signal })
+      if (!response.ok) {
+        let message = 'Не получилось выполнить действие'
+        try {
+          const body = await response.json()
+          if (body?.detail) message = localizeText(String(body.detail))
+        } catch {
+          // keep friendly fallback
+        }
+        if (method === 'GET' && attempt + 1 < attempts && response.status >= 500) {
+          await sleep(350)
+          continue
+        }
+        throw new Error(message)
+      }
+      const payload = await response.json() as T
+      return localizePayload(path, payload)
+    } catch (error) {
+      lastError = error
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        if (attempt + 1 < attempts) {
+          await sleep(350)
+          continue
+        }
+        throw new Error('Сервис отвечает слишком долго. Попробуй ещё раз.')
+      }
+      if (error instanceof Error && error.message !== 'Failed to fetch') throw error
+      if (attempt + 1 < attempts) {
+        await sleep(350)
+        continue
+      }
+    } finally {
+      window.clearTimeout(timer)
     }
-    throw new Error(message)
   }
-  const payload = await response.json() as T
-  return localizePayload(path, payload)
+
+  if (lastError instanceof Error && lastError.message && lastError.message !== 'Failed to fetch') throw lastError
+  throw new Error('Нет связи с Clarify. Проверь интернет и попробуй ещё раз.')
 }
 
 export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
