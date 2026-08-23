@@ -47,8 +47,6 @@ def _relevance(item, terms: set[str]) -> float:
         count = text.count(term)
         if count:
             score += min(count, 4) * 1.5
-    # A phrase match is strong evidence and prevents recent unrelated materials
-    # from flooding the source list.
     phrase = ' '.join(sorted(terms))
     if len(phrase) > 8 and phrase in f'{title} {summary} {text}':
         score += 8.0
@@ -66,18 +64,16 @@ async def memory_ask(
     if not await ctx.usage.allowed(user):
         raise HTTPException(429, 'Дневной лимит AI закончился')
 
-    # Look at a wider recent pool, then rank before retrieval. Previously every
-    # one of the last 12 materials became a source even when it was unrelated.
     items = await ctx.materials.latest(user.id, 50)
     if not items:
-        raise HTTPException(400, 'Memory пока пустая. Добавь первый материал.')
+        raise HTTPException(400, 'Материалов пока нет. Добавь первый материал.')
 
     terms = _terms(body.question)
     ranked = sorted(((_relevance(item, terms), item) for item in items), key=lambda pair: pair[0], reverse=True)
     selected = [item for score, item in ranked if score > 0][:6]
 
-    # Natural questions can have little lexical overlap. A very small fallback is
-    # better than returning a giant list of unrelated recent sources.
+    # Natural questions can have little lexical overlap. A small recent fallback
+    # is better than flooding the answer with every unrelated saved material.
     if not selected:
         selected = items[:3]
 
@@ -91,7 +87,7 @@ async def memory_ask(
         sources.append({'id': item.id, 'title': item.title, 'type': item.type})
 
     if not parts:
-        raise HTTPException(400, 'Не нашёл подходящего контекста в Memory')
+        raise HTTPException(400, 'Не нашёл подходящей информации в сохранённых материалах')
 
     prompt = (
         'Ответь на вопрос пользователя только по выбранным релевантным материалам. '
@@ -102,4 +98,5 @@ async def memory_ask(
     )
     answer, usage = await ctx.ai.ask(prompt, '\n\n'.join(parts)[:48_000], model=ctx.settings.smart)
     await ctx.usage.record(user.id, ctx.settings.smart, 'webapp_memory_ask', usage)
+    await ctx.metrics.inc('material_question', user.id)
     return {'answer': answer, 'sources': sources[:6]}
