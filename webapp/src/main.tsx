@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV1'
+import BetaNoticeWidget from './BetaNoticeWidget'
 import CopilotWidget from './CopilotWidget'
 import SupportWidget from './SupportWidget'
 import PlansWidget from './PlansWidget'
@@ -11,6 +12,7 @@ import UXFixesWidget from './UXFixesWidget'
 import './v1.css'
 import './v1-mobile.css'
 import './support.css'
+import './beta-notice.css'
 import './plans.css'
 import './plan-badge.css'
 import './product-upgrade.css'
@@ -37,6 +39,7 @@ createRoot(document.getElementById('root')!).render(
     <MaterialCleanupWidget />
     <CopilotWidget />
     <UXFixesWidget />
+    <BetaNoticeWidget />
     <SupportWidget />
   </StrictMode>,
 )
