@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     image_max_side: int = 1600
     image_jpeg_quality: int = 82
 
+    # Fast document pipeline. Text documents are extracted/indexed locally and
+    # use one bounded AI request for the initial analysis. Large documents send
+    # a locally selected digest instead of map/reduce calls over every chunk.
+    document_fast_path_chars: int = 30_000
+    document_digest_max_chars: int = 28_000
+    document_chars_per_page: int = 2_500
+    document_max_text_chars: int = 1_500_000
+    document_ai_timeout: float = 45.0
+    document_analysis_max_tokens: int = 900
+    document_ocr_concurrency: int = 1
+    document_ocr_page_timeout: float = 45.0
+
     # Clarify plans. All prices are Telegram Stars (XTR) and can be overridden in Amvera.
     pro_stars_price: int = 299
     max_stars_price: int = 599
@@ -129,7 +141,7 @@ class Settings(BaseSettings):
     max_active_jobs_per_user: int = 2
     requests_per_minute: int = 30
     material_ttl_days: int = 30
-    max_material_chars: int = 400_000
+    max_material_chars: int = 1_500_000
 
     # Legacy PRICE settings retained so old modules/tests stay import-compatible.
     check_interval_free_hours: int = 12
