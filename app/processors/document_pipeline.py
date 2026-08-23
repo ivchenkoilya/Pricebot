@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import fitz
 
+from app.processors.common import chunk_text
 from app.processors.documents import DocumentTooLarge, extract_document
 
 
@@ -180,6 +181,17 @@ def merge_pdf_ocr(extraction: DocumentExtraction, ocr_pages: dict[int, str]) -> 
     )
 
 
+def _append_digest_block(blocks: list[str], block: str) -> None:
+    """Keep digest candidates small enough that one giant paragraph cannot eat the budget."""
+    block = (block or '').strip()
+    if not block:
+        return
+    if len(block) <= 4200:
+        blocks.append(block)
+        return
+    blocks.extend(chunk_text(block, size=3500, overlap=150))
+
+
 def _split_blocks(text: str) -> list[str]:
     text = (text or '').strip()
     if not text:
@@ -200,7 +212,7 @@ def _split_blocks(text: str) -> list[str]:
                 current_page = block.split('\n', 1)[0].strip()
         if current_page and not block.startswith('[Страница '):
             block = current_page + '\n' + block
-        blocks.append(block)
+        _append_digest_block(blocks, block)
     return blocks
 
 
@@ -239,11 +251,22 @@ def build_digest(text: str, *, fast_path_chars: int = 30_000, max_chars: int = 2
         key=lambda item: (-item[0], item[1]),
     )
 
+    budget = max(4_000, int(max_chars))
     must_indexes = set(range(min(2, total)))
     must_indexes.update(range(max(0, total - 2), total))
-    chosen: dict[int, str] = {i: blocks[i] for i in must_indexes}
-    used = sum(len(value) + 2 for value in chosen.values())
-    budget = max(4_000, int(max_chars))
+    chosen: dict[int, str] = {}
+    used = 0
+
+    # Preserve a little context from both ends, but never let mandatory context
+    # consume the whole digest before high-value clauses can be selected.
+    for index in sorted(must_indexes):
+        block = blocks[index]
+        remaining_for_priority = max(1200, budget // 4)
+        cap = max(400, min(len(block), budget - used - remaining_for_priority))
+        if cap <= 0:
+            continue
+        chosen[index] = block[:cap].rstrip()
+        used += len(chosen[index]) + 2
 
     for _score, index, block in ranked:
         if index in chosen:
