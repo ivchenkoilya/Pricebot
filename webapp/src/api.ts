@@ -30,6 +30,28 @@ export function hasTelegramAuth() {
   return Boolean(tg()?.initData)
 }
 
+function localizeText(value: string) {
+  return value
+    .replaceAll('Memory', 'Материалы')
+    .replaceAll('Smart AI', 'Умный AI')
+    .replaceAll('Fast AI', 'Быстрый AI')
+    .replaceAll('AI Inbox', 'Важное')
+}
+
+function localizePayload<T>(path: string, payload: T): T {
+  if (path !== '/api/plans' || !payload || typeof payload !== 'object') return payload
+  const raw = payload as unknown as {
+    plans?: Array<{ tagline?: string; features?: string[] }>
+    note?: string
+  }
+  raw.plans?.forEach(plan => {
+    if (plan.tagline) plan.tagline = localizeText(plan.tagline)
+    if (plan.features) plan.features = plan.features.map(localizeText)
+  })
+  if (raw.note) raw.note = localizeText(raw.note)
+  return payload
+}
+
 async function request<T>(path: string, init: RequestInit = {}, json = true): Promise<T> {
   const initData = tg()?.initData || ''
   const headers = new Headers(init.headers || {})
@@ -40,13 +62,14 @@ async function request<T>(path: string, init: RequestInit = {}, json = true): Pr
     let message = 'Не получилось выполнить действие'
     try {
       const body = await response.json()
-      if (body?.detail) message = String(body.detail)
+      if (body?.detail) message = localizeText(String(body.detail))
     } catch {
       // keep friendly fallback
     }
     throw new Error(message)
   }
-  return response.json() as Promise<T>
+  const payload = await response.json() as T
+  return localizePayload(path, payload)
 }
 
 export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
