@@ -14,7 +14,12 @@ START_TEXT = (
     'Отправь голосовое, документ, фото, переписку или ссылку — я выделю '
     '<b>главное, задачи, сроки, суммы и риски</b>.\n\n'
     'А потом можешь задать любые вопросы по материалу.\n\n'
-    '👇 Просто отправь что-нибудь или посмотри пример.'
+    '👇 Просто отправь что-нибудь или посмотри пример.\n\n'
+    '━━━━━━━━━━━━━━━━━━\n'
+    '🧪 <b>Clarify находится в разработке</b>\n\n'
+    'Некоторые функции пока могут работать нестабильно или ошибаться. '
+    'Если заметишь проблему — напиши в поддержку через <code>/support</code>.\n'
+    'Мы читаем обращения и используем их для улучшения Clarify.'
 )
 
 CAPABILITIES_TEXT = (
@@ -45,8 +50,8 @@ HELP_TEXT = (
     '✍️ <b>Написать</b> — подготовить ответ или сообщение в нужном тоне.\n\n'
     '🧠 <b>Материалы</b> — найти старый разбор или спросить по сохранённой информации.\n\n'
     '👤 <b>Профиль</b> — лимиты, тариф, бонусы и приглашения.\n\n'
-    'Если что-то не работает, открой <b>Профиль → Помощь и поддержка</b>.\n\n'
-    'Команды: <code>/start</code> · <code>/profile</code> · <code>/invite</code> · <code>/clear</code>'
+    '🛟 <b>Поддержка</b> — <code>/support</code>. Обращения не разбираются AI и не тратят лимит.\n\n'
+    'Команды: <code>/start</code> · <code>/profile</code> · <code>/invite</code> · <code>/support</code> · <code>/clear</code>'
 )
 
 ABOUT_TEXT = (
@@ -90,6 +95,7 @@ def _start_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text='💬 Переписка', callback_data='growth:hint:chat'),
         ],
         [InlineKeyboardButton(text='✨ Посмотреть пример', callback_data='growth:demo')],
+        [InlineKeyboardButton(text='🛟 Поддержка', callback_data='support:open')],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
