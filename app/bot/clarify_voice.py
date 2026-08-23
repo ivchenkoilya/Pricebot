@@ -32,8 +32,9 @@ def _transcript_preview(transcript: str, limit: int = 1400) -> str:
 
 def _analysis_text(result) -> str:
     parts: list[str] = []
-    if getattr(result, 'summary', ''):
-        parts.append(_short(result.summary, 850))
+    summary = getattr(result, 'summary', '') or ''
+    if summary:
+        parts.append(html.escape(_short(summary, 850)))
 
     key_points = list(getattr(result, 'key_points', []) or [])[:3]
     if key_points:
@@ -49,11 +50,9 @@ def _analysis_text(result) -> str:
 
     if not parts:
         title = getattr(result, 'title', '') or 'Содержательного вывода нет.'
-        parts.append(_short(title, 850))
+        parts.append(html.escape(_short(title, 850)))
 
-    # summary/title are escaped here; list items above were escaped individually.
-    first = html.escape(parts[0]) if parts and '<' not in parts[0] else parts[0]
-    return '\n\n'.join([first, *parts[1:]])
+    return '\n\n'.join(parts)
 
 
 def _voice_card(transcript: str, result, duration: int) -> str:
@@ -74,13 +73,15 @@ def _voice_card(transcript: str, result, duration: int) -> str:
         f'📝 <b>Расшифровка</b>\n\n\n'
         f'🧠 <b>Что понял Clarify</b>\n{analysis}'
     )
-    available = max(240, TELEGRAM_SAFE_LIMIT - len(fixed) - 80)
-    preview = html.escape(_transcript_preview(transcript, available))
+    available = max(240, TELEGRAM_SAFE_LIMIT - len(fixed) - 120)
+    # HTML escaping can expand the text, so use a conservative raw-character cap.
+    raw_limit = max(220, min(900, available // 2))
+    preview = html.escape(_transcript_preview(transcript, raw_limit))
     return (
         f'🎤 <b>Clarify</b> · {minutes:02d}:{seconds:02d}\n\n'
         f'📝 <b>Расшифровка</b>\n{preview}\n\n'
         f'🧠 <b>Что понял Clarify</b>\n{analysis}'
-    )[:TELEGRAM_SAFE_LIMIT]
+    )
 
 
 def _cached_voice_card(material, duration: int) -> str:
@@ -91,7 +92,7 @@ def _cached_voice_card(material, duration: int) -> str:
         f'♻️ <b>Уже готово</b> · {minutes:02d}:{seconds:02d}\n\n'
         f'📝 <b>Расшифровка</b>\n{transcript}\n\n'
         f'🧠 <b>Что понял Clarify</b>\n{summary}'
-    )[:TELEGRAM_SAFE_LIMIT]
+    )
 
 
 async def _transcribe_voice(ctx, path: str) -> str:
