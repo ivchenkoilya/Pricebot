@@ -90,6 +90,8 @@ def test_clean_document_drops_invented_damage_warning():
 
 def test_support_intent_is_conservative():
     assert _looks_like_support_intent('поддержка')
+    assert _looks_like_support_intent('служба поддержки')
+    assert _looks_like_support_intent('помощь поддержки')
     assert _looks_like_support_intent('баг')
     assert _looks_like_support_intent('ошибка в боте')
     assert _looks_like_support_intent('Хочу написать в поддержку')
