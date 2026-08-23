@@ -4,7 +4,6 @@ import asyncio
 import math
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 import fitz
 
@@ -141,8 +140,7 @@ def extract_for_analysis(
     if len(result.text) > max(50_000, int(max_text_chars)):
         approx = result.estimated_pages or estimate_pages(result.text, chars_per_page)
         raise DocumentTooLarge(
-            f'Документ содержит слишком много текста ({len(result.text):,} символов, примерно {approx} стр.)'
-            .replace(',', ' ')
+            f'Документ содержит слишком много текста ({len(result.text):,} символов, примерно {approx} стр.)'.replace(',', ' ')
         )
     return result
 
@@ -276,5 +274,5 @@ async def analyze_document_once(
 ):
     return await asyncio.wait_for(
         ai.analyze_text(text, kind, model=model, max_tokens=max_tokens),
-        timeout=max(5.0, float(timeout)),
+        timeout=max(0.01, float(timeout)),
     )
