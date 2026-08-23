@@ -43,6 +43,10 @@ MONEY_RE = re.compile(r'\b\d[\d\s\u00a0\u2009\u202f]*(?:[.,]\d{1,2})?\s*(?:₽|�
 PERCENT_RE = re.compile(r'\b\d+(?:[.,]\d+)?\s*%')
 PAGE_RE = re.compile(r'^\[Страница\s+(\d+)\]\s*$', re.I | re.M)
 HEADING_RE = re.compile(r'^(?:\d+(?:\.\d+)*[.)]?\s+)?[А-ЯA-ZЁ][^.!?]{2,110}$')
+FALSE_INTEGRITY_RE = re.compile(
+    r'(поврежден|повреждён|обрезан|неполно|не распознан|недоступн.{0,20}страниц|часть.{0,20}утрач)',
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -58,8 +62,12 @@ class DocumentExtraction:
     def display_pages(self) -> str:
         if self.pages is not None:
             return f'{self.pages} стр.'
+        # DOCX pagination depends on a renderer. Approximate chars/page remains
+        # useful for tariff guards but must not be shown as if it were real.
+        if self.kind == 'docx':
+            return ''
         if self.estimated_pages is not None:
-            return f'≈{self.estimated_pages} стр.'
+            return f'≈{self.estimated_pages} условных стр.'
         return ''
 
 
@@ -125,9 +133,9 @@ def extract_for_analysis(
     else:
         text, pages, kind = extract_document(path, ext, max_pages)
         estimated = pages if pages is not None else estimate_pages(text, chars_per_page)
-        if ext == '.docx' and estimated > max_pages:
+        if ext == '.docx' and pages is None and estimated > max_pages:
             raise DocumentTooLarge(
-                f'DOCX: примерно {estimated} стр., лимит тарифа {max_pages}'
+                f'DOCX: объём текста примерно эквивалентен {estimated} страницам, лимит тарифа {max_pages}'
             )
         result = DocumentExtraction(
             text=text,
@@ -286,6 +294,19 @@ def build_digest(text: str, *, fast_path_chars: int = 30_000, max_chars: int = 2
     return DocumentDigest(digest, len(source), len(ordered), True)
 
 
+def sanitize_document_analysis(result):
+    """Drop invented technical-integrity warnings after a clean extraction."""
+    warnings = list(getattr(result, 'warnings', []) or [])
+    result.warnings = [item for item in warnings if not FALSE_INTEGRITY_RE.search(item or '')]
+    summary = getattr(result, 'summary', '') or ''
+    if FALSE_INTEGRITY_RE.search(summary):
+        sentences = re.split(r'(?<=[.!?])\s+', summary)
+        result.summary = ' '.join(
+            sentence for sentence in sentences if not FALSE_INTEGRITY_RE.search(sentence)
+        ).strip()
+    return result
+
+
 async def analyze_document_once(
     ai,
     text: str,
@@ -295,7 +316,8 @@ async def analyze_document_once(
     timeout: float,
     max_tokens: int,
 ):
-    return await asyncio.wait_for(
+    result, usage, chosen_model = await asyncio.wait_for(
         ai.analyze_text(text, kind, model=model, max_tokens=max_tokens),
         timeout=max(0.01, float(timeout)),
     )
+    return sanitize_document_analysis(result), usage, chosen_model
