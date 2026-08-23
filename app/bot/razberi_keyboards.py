@@ -25,6 +25,7 @@ BTN_HELP = '❓ Помощь'
 BTN_MINIAPP = '🏠 Clarify'
 BTN_PROFILE = '👤 Профиль'
 BTN_MORE = '••• Ещё'
+BTN_BACK = '↩️ Основное меню'
 
 # Old persistent Telegram keyboards can survive a deploy. Keep their labels
 # routable even though the new menu no longer shows them.
@@ -49,7 +50,7 @@ def quick_webapp_url(webapp_url: str = '', page: str | None = None) -> str:
 
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query['launch'] = 'keyboard'
-    query['v'] = '20260823-1'
+    query['v'] = '20260823-2'
     if page:
         query['page'] = page
     return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
@@ -63,15 +64,31 @@ def _webapp_button(text: str, webapp_url: str, page: str) -> KeyboardButton:
 
 
 def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
-    """Compact six-action menu. Rare tools live behind the Mini App profile/tools screen."""
+    """Compact six-action menu. Rare tools live one tap behind More."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_UNPACK), KeyboardButton(text=BTN_WRITE)],
             [KeyboardButton(text=BTN_MEMORY), _webapp_button(BTN_PROFILE, webapp_url, 'profile')],
-            [KeyboardButton(text=BTN_PLANS), _webapp_button(BTN_MORE, webapp_url, 'tools')],
+            [KeyboardButton(text=BTN_PLANS), KeyboardButton(text=BTN_MORE)],
         ],
         resize_keyboard=True,
         input_field_placeholder='Сообщение или материал…',
+    )
+
+
+def more_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
+    """Secondary menu keeps every advanced feature reachable without cluttering onboarding."""
+    mini_app = _webapp_button(BTN_MINIAPP, webapp_url, 'home')
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_INBOX), KeyboardButton(text=BTN_PROJECTS)],
+            [KeyboardButton(text=BTN_COMPARE), KeyboardButton(text=BTN_SUPPORT)],
+            [KeyboardButton(text=BTN_SETTINGS), KeyboardButton(text=BTN_CLEAR)],
+            [KeyboardButton(text=BTN_HELP), mini_app],
+            [KeyboardButton(text=BTN_BACK)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder='Дополнительные функции…',
     )
 
 
