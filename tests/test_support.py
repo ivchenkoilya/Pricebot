@@ -1,15 +1,16 @@
 from datetime import datetime
 from types import SimpleNamespace
 
-from app.bot.razberi_keyboards import BTN_SUPPORT, main_menu
+from app.bot.razberi_keyboards import BTN_SUPPORT, main_menu, more_menu
 from app.webapp.auth import TelegramWebAppUser
 from app.webapp.support import _support_text
 
 
-def test_main_menu_contains_support_button():
-    keyboard = main_menu()
-    labels = [button.text for row in keyboard.keyboard for button in row]
-    assert BTN_SUPPORT in labels
+def test_support_is_reachable_without_cluttering_main_menu():
+    primary_labels = [button.text for row in main_menu().keyboard for button in row]
+    more_labels = [button.text for row in more_menu().keyboard for button in row]
+    assert BTN_SUPPORT not in primary_labels
+    assert BTN_SUPPORT in more_labels
 
 
 def test_support_message_contains_user_and_escapes_html():
