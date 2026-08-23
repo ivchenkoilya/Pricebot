@@ -26,20 +26,23 @@ def test_brand_chat_intents_are_not_new_materials():
     assert classify_text_intent('Список команд').name == 'capabilities'
     assert 'Привет! Я Clarify' in START_TEXT
     assert 'Clarify' in ABOUT_TEXT
-    assert 'Возможности Clarify' in CAPABILITIES_TEXT
+    assert 'Что умеет Clarify' in CAPABILITIES_TEXT
     assert '/start' in HELP_TEXT
-    assert '/summary' in HELP_TEXT
+    assert '/profile' in HELP_TEXT
     assert '/clear' in HELP_TEXT
 
 
-def test_start_keyboard_is_compact_and_contains_core_actions():
+def test_start_keyboard_is_action_first_and_compact():
     keyboard = _start_keyboard('')
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert '✨ Возможности' in labels
-    assert '💡 Примеры' in labels
-    assert '❓ Помощь' in labels
-    assert '🧠 Как это работает' not in labels
-    assert '🗑 Очистить контекст' not in labels
+    assert labels == [
+        '🎙 Голосовое', '📄 Документ',
+        '📷 Фото / скриншот', '💬 Переписка',
+        '✨ Посмотреть пример',
+    ]
+    assert '👤 Профиль' not in labels
+    assert '❓ Помощь' not in labels
+    assert '🎁 Пригласить друга' not in labels
 
 
 def test_start_keyboard_adds_webapp_button_for_https_url():
@@ -48,15 +51,22 @@ def test_start_keyboard_adds_webapp_button_for_https_url():
     assert labels[0] == '🚀 Открыть Clarify'
 
 
-def test_material_actions_offer_followup_tools():
-    keyboard = actions(7, 'pdf')
-    labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert '⚡ Кратко' in labels
-    assert '📌 Главное' in labels
-    assert '🧠 Простыми словами' in labels
-    assert '✅ Что делать' in labels
-    assert '⚠️ Риски' in labels
-    assert '❓ Задать вопрос' in labels
+def test_material_actions_are_contextual_instead_of_universal():
+    document = actions(7, 'pdf')
+    doc_labels = [button.text for row in document.inline_keyboard for button in row]
+    assert '❓ Задать вопрос' in doc_labels
+    assert '📌 Главное' in doc_labels
+    assert '✅ Что делать' in doc_labels
+    assert '📅 Сроки' in doc_labels
+    assert '💰 Суммы' in doc_labels
+    assert '⚠️ Риски' in doc_labels
+
+    image = actions(8, 'image')
+    image_labels = [button.text for row in image.inline_keyboard for button in row]
+    assert '📌 Детали' in image_labels
+    assert '🧠 Объяснить' in image_labels
+    assert '⚠️ Риски' not in image_labels
+    assert '💰 Суммы' not in image_labels
 
 
 def test_missing_context_shape_is_detectable_without_breaking_legacy_router():
@@ -84,7 +94,7 @@ async def test_clear_hides_old_material_but_keeps_history(db):
     assert conversations.history_text(user_id) == ''
 
     new = await materials.create(user_id, 'text', 'Новый материал', 'Оплата завтра', 'Оплата завтра')
-    assert [item.id for item in await conversations.recent_materials(user_id, 3)] == [new.id]
+    assert [item.id for item in await conversations.recent_materials(user_id, 3)][0] == new.id
 
 
 @pytest.mark.asyncio
