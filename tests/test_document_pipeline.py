@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import fitz
 import pytest
 from docx import Document
 
 from app.ai.schemas import AnalysisResult
+from app.config.settings import Settings
 from app.processors.document_pipeline import (
     analyze_document_once,
     build_digest,
@@ -14,6 +16,7 @@ from app.processors.document_pipeline import (
     extract_for_analysis,
 )
 from app.processors.documents import DocumentTooLarge
+from app.services.document_analysis import analyze_and_store_document
 
 
 def test_estimate_pages_is_predictable():
@@ -126,3 +129,92 @@ def test_mixed_pdf_marks_only_blank_page_for_ocr(tmp_path):
     assert result.pages == 2
     assert result.scanned_pages == [2]
     assert '[Страница 1]' in result.text
+
+
+class _FakeMaterials:
+    def __init__(self):
+        self.calls = []
+
+    async def create(self, user_id, type_, title, text, summary='', *args, **kwargs):
+        self.calls.append({'user_id': user_id, 'type': type_, 'title': title, 'text': text, 'summary': summary})
+        return SimpleNamespace(id=1, type=type_, title=title, extracted_text=text, summary=summary)
+
+
+class _FakeUsage:
+    def __init__(self):
+        self.rows = []
+
+    async def record(self, *args):
+        self.rows.append(args)
+
+
+@pytest.mark.asyncio
+async def test_large_text_document_service_uses_one_ai_call_and_stores_full_source(tmp_path):
+    source = ('Обычный раздел договора. ' * 2200) + '\n\nШтраф за просрочку 10%. Срок оплаты 15.09.2026.'
+    path = tmp_path / 'large.txt'
+    path.write_text(source, encoding='utf-8')
+
+    class FakeAI:
+        def __init__(self):
+            self.calls = 0
+            self.last_text = ''
+
+        async def analyze_text(self, text, kind, *, model, max_tokens):
+            self.calls += 1
+            self.last_text = text
+            return AnalysisResult(title='Договор', summary='Краткий итог'), {'input': 100, 'output': 20}, model
+
+    settings = Settings(
+        bot_token='test',
+        openai_model='fast-model',
+        document_fast_path_chars=5000,
+        document_digest_max_chars=8000,
+        document_ai_timeout=1,
+        max_material_chars=200_000,
+    )
+    ai = FakeAI()
+    materials = _FakeMaterials()
+    ctx = SimpleNamespace(
+        settings=settings,
+        ai=ai,
+        materials=materials,
+        usage=_FakeUsage(),
+        doc_sem=asyncio.Semaphore(1),
+        ai_sem=asyncio.Semaphore(1),
+    )
+    user = SimpleNamespace(id=1, telegram_id=123, is_pro=False, pro_until=None, notification_settings='{}')
+
+    item = await analyze_and_store_document(ctx, user, str(path), '.txt', 'large.txt')
+
+    assert ai.calls == 1
+    assert len(ai.last_text) <= 8000
+    assert materials.calls[0]['text'] == source
+    assert item.summary == 'Краткий итог'
+
+
+@pytest.mark.asyncio
+async def test_ai_failure_after_extract_still_saves_document(tmp_path):
+    source = 'Важный текст договора и срок 15.09.2026.'
+    path = tmp_path / 'contract.txt'
+    path.write_text(source, encoding='utf-8')
+
+    class FailingAI:
+        async def analyze_text(self, text, kind, *, model, max_tokens):
+            raise RuntimeError('provider unavailable')
+
+    settings = Settings(bot_token='test', openai_model='fast-model', document_ai_timeout=1)
+    materials = _FakeMaterials()
+    ctx = SimpleNamespace(
+        settings=settings,
+        ai=FailingAI(),
+        materials=materials,
+        usage=_FakeUsage(),
+        doc_sem=asyncio.Semaphore(1),
+        ai_sem=asyncio.Semaphore(1),
+    )
+    user = SimpleNamespace(id=1, telegram_id=123, is_pro=False, pro_until=None, notification_settings='{}')
+
+    item = await analyze_and_store_document(ctx, user, str(path), '.txt', 'contract.txt')
+
+    assert materials.calls[0]['text'] == source
+    assert 'прочитан и сохранён' in item.summary
