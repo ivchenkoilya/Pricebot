@@ -12,28 +12,28 @@ from app.services.growth import build_referral_link
 
 
 DEMO_TEXT = (
-    '🎙 <b>Демо · голосовое 12:43</b>\n\n'
-    '<b>Главное</b>\n'
-    '• Поставщик подтвердил наличие товара.\n'
-    '• Финальную цену пришлёт сегодня.\n'
-    '• Отгрузка возможна после подтверждения оплаты.\n\n'
-    '<b>Что от тебя хотят</b>\n'
-    'Подтвердить количество и ответить, подходит ли срок поставки.\n\n'
-    '<b>Задачи</b>\n'
-    '1. Проверить количество.\n'
-    '2. Ответить поставщику.\n'
-    '3. После получения цены согласовать оплату.\n\n'
-    '<b>Срок</b>\n'
-    'Ответить желательно сегодня.\n\n'
-    'Так же Clarify разбирает твои реальные голосовые, документы, скриншоты и переписки.'
+    '🎙 <b>Пример · голосовое 12:43</b>\n\n'
+    '<b>📌 Главное</b>\n'
+    'Нужно подготовить презентацию для клиента и согласовать бюджет до пятницы.\n\n'
+    '<b>✅ Задачи</b>\n'
+    '• Илья — сделать макет презентации.\n'
+    '• Анна — согласовать бюджет с клиентом.\n'
+    '• После согласования — отправить финальную версию.\n\n'
+    '<b>📅 Срок</b>\n'
+    'До пятницы.\n\n'
+    '<b>💰 Бюджет</b>\n'
+    '80 000 ₽.\n\n'
+    '<b>💬 Что дальше?</b>\n'
+    'По реальному материалу можно сразу спросить: «кто что должен сделать?», «какие риски?» или «напиши ответ».\n\n'
+    'Так Clarify превращает длинный материал в понятный результат.'
 )
 
 
 HINTS = {
-    'voice': '🎙 <b>Голосовое</b>\n\nПросто отправь голосовое сюда. Clarify расшифрует его и покажет главное, задачи и то, что от тебя хотят.',
-    'document': '📄 <b>Документ</b>\n\nПрикрепи PDF, DOCX, TXT, MD, XLSX или CSV. Clarify найдёт главное, деньги, сроки и риски.',
-    'image': '📷 <b>Скриншот</b>\n\nОтправь фото или скриншот. После разбора можно задавать уточняющие вопросы по этому же изображению.',
-    'chat': '💬 <b>Переписка</b>\n\nПерешли сообщение или вставь текст. Clarify объяснит смысл и при необходимости подготовит ответ.',
+    'voice': '🎙 <b>Голосовое</b>\n\nПросто отправь голосовое сюда. Clarify расшифрует его и покажет главное, задачи, сроки и то, что от тебя хотят.',
+    'document': '📄 <b>Документ</b>\n\nПрикрепи PDF, DOCX, TXT, MD, XLSX или CSV. Clarify найдёт главное, суммы, сроки и риски.',
+    'image': '📷 <b>Фото / скриншот</b>\n\nОтправь фото или скриншот. Clarify разберёт важные детали, а потом можно будет задать уточняющий вопрос.',
+    'chat': '💬 <b>Переписка</b>\n\nПерешли сообщение или вставь текст. Clarify объяснит смысл, скажет, что от тебя хотят, и поможет ответить.',
 }
 
 
@@ -42,7 +42,7 @@ def _share_url(link: str, text: str) -> str:
 
 
 def _invite_keyboard(link: str) -> InlineKeyboardMarkup:
-    text = 'Попробуй Clarify: он разбирает голосовые, документы и переписки вместо тебя.'
+    text = 'Попробуй Clarify: он разбирает голосовые, документы, фото и переписки вместо тебя.'
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='📤 Отправить другу', url=_share_url(link, text))],
         [InlineKeyboardButton(text='👤 Мой профиль', callback_data='growth:profile')],
@@ -61,10 +61,11 @@ async def _send_invite(ctx, message: Message, telegram_user) -> None:
     bonus = int(ctx.settings.referral_bonus_requests)
     await message.answer(
         '<b>🎁 Пригласи друга в Clarify</b>\n\n'
-        f'После его <b>первого успешного AI-разбора</b> вы оба получите +{bonus} запросов.\n\n'
+        f'Друг получит <b>+{bonus}</b> запросов после первого успешного разбора. '
+        f'Ты тоже получишь <b>+{bonus}</b>.\n\n'
         f'Приглашено: <b>{stats.invited_total}</b>\n'
-        f'Сделали первый разбор: <b>{stats.rewarded_total}</b>\n'
-        f'Заработано: <b>+{stats.earned_requests}</b> запросов\n\n'
+        f'Активировано: <b>{stats.rewarded_total}</b>\n'
+        f'Получено: <b>+{stats.earned_requests}</b> запросов\n\n'
         f'<code>{esc(link)}</code>',
         reply_markup=_invite_keyboard(link),
     )
@@ -76,17 +77,21 @@ async def _send_profile(ctx, message: Message, telegram_user) -> None:
     used = await ctx.usage.ai_count_today(user.id)
     limit = plan_daily_ai_limit(user, ctx.settings)
     bonus = bonus_requests(user)
-    limit_text = '∞' if limit is None else str(limit)
-    campaign = f' · {stats.campaign}' if stats.campaign else ''
+    raw_plan = clarify_plan(user, ctx.settings)
+    plan = 'Полный доступ' if raw_plan == 'OWNER' else ('PRO MAX' if raw_plan == 'MAX' else raw_plan)
+    if limit is None:
+        limit_line = 'Запросы сегодня: <b>без лимита</b>'
+    else:
+        remaining = max(0, limit - used)
+        limit_line = f'Осталось сегодня: <b>{remaining}</b> · использовано {used} из {limit}'
     await message.answer(
         '<b>👤 Профиль Clarify</b>\n\n'
-        f'Тариф: <b>{clarify_plan(user, ctx.settings)}</b>\n'
-        f'AI сегодня: <b>{used} / {limit_text}</b>\n'
-        f'Бонусные запросы: <b>{bonus}</b>\n\n'
-        f'👥 Приглашено: <b>{stats.invited_total}</b>\n'
+        f'Тариф: <b>{esc(plan)}</b>\n'
+        f'{limit_line}\n'
+        f'Бонусные запросы: <b>+{bonus}</b>\n\n'
+        f'👥 Приглашено друзей: <b>{stats.invited_total}</b>\n'
         f'✅ Активировано: <b>{stats.rewarded_total}</b>\n'
-        f'🎁 Получено за приглашения: <b>+{stats.earned_requests}</b>\n\n'
-        f'Источник первого запуска: <b>{esc(stats.source)}</b>{esc(campaign)}',
+        f'🎁 Получено за приглашения: <b>+{stats.earned_requests}</b>',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='🎁 Пригласить друга', callback_data='growth:invite')],
             [InlineKeyboardButton(text='💎 Тарифы', callback_data='plans:open')],
@@ -119,7 +124,7 @@ def build_growth_router(ctx) -> Router:
         converted = int(data['referral_converted'])
         referral_conversion = (converted / opened * 100.0) if opened else 0.0
         await message.answer(
-            '<b>📈 Clarify · growth</b>\n\n'
+            '<b>📈 Clarify · рост</b>\n\n'
             f'Регистрации: <b>{registrations}</b>\n'
             f'Первый AI-разбор: <b>{first_analyses}</b> ({conversion:.1f}%)\n'
             f'Реферальные открытия: <b>{opened}</b>\n'
@@ -144,7 +149,6 @@ def build_growth_router(ctx) -> Router:
             DEMO_TEXT,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text='📎 Попробовать со своим материалом', callback_data='growth:hint:voice')],
-                [InlineKeyboardButton(text='🎁 Пригласить друга', callback_data='growth:invite')],
             ]),
         )
         await callback.answer()
@@ -169,12 +173,12 @@ def build_growth_router(ctx) -> Router:
         link = await _referral_link(ctx, callback.from_user.id)
         type_labels = {
             'voice': 'голосовое', 'audio': 'аудио', 'pdf': 'PDF', 'docx': 'документ',
-            'document': 'документ', 'image': 'скриншот', 'photo': 'скриншот',
+            'document': 'документ', 'image': 'фото', 'photo': 'фото',
             'forwarded': 'переписку', 'video': 'видео', 'text': 'текст',
         }
         label = type_labels.get((material.type or '').lower(), 'материал')
         text = (
-            f'Я разобрал {label} в Clarify: вместо долгого просмотра получил главное, задачи и важные детали. '
+            f'Я разобрал {label} в Clarify: вместо долгого просмотра получил главное и важные детали. '
             'Попробуй на своём материале.'
         )
         await callback.message.answer(
