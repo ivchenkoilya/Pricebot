@@ -4,9 +4,9 @@ import re
 from datetime import datetime, timedelta
 
 from app.ai.intent import IntentDecision, classify_text_intent
+from app.utils.url import find_urls, strip_urls
 
 
-URL_RE = re.compile(r'https?://[^\s<>"\']+', flags=re.IGNORECASE)
 WORD_RE = re.compile(r'[\w₽-]{3,}', flags=re.IGNORECASE)
 
 REFERENCE_MARKERS = (
@@ -18,19 +18,11 @@ REFERENCE_MARKERS = (
 
 
 def extract_urls(text: str, limit: int = 3) -> list[str]:
-    urls: list[str] = []
-    for match in URL_RE.findall(text or ''):
-        clean = match.rstrip('.,;:!?)]}»')
-        if clean and clean not in urls:
-            urls.append(clean)
-        if len(urls) >= limit:
-            break
-    return urls
+    return find_urls(text, limit=limit)
 
 
 def text_without_urls(text: str) -> str:
-    value = URL_RE.sub(' ', text or '')
-    return re.sub(r'\s+', ' ', value).strip(' \n\t-—:')
+    return strip_urls(text)
 
 
 def contextual_decision(text: str, has_recent_material: bool) -> IntentDecision | None:
