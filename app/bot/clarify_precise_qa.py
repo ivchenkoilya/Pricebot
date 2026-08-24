@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
@@ -44,11 +46,35 @@ def build_precise_qa_router(ctx) -> Router:
             'которые непосредственно подтверждают ответ; не добавляй соседнюю страницу только потому, что она есть в контексте. '
             'Если точного ответа в переданном контексте нет, прямо скажи «В найденных фрагментах точного ответа нет» и ничего не выдумывай.'
         )
-        model = settings.smart
-        async with ctx.ai_sem:
-            answer, usage = await ctx.ai.ask(task, context, model=model)
+
+        # Direct questions over already indexed chunks do not need the slow smart
+        # model by default. Keep them fast and hard-bound the request so the FSM
+        # cannot remain stuck for minutes.
+        model = settings.fast
+        progress = await message.answer('🧠 <b>Ищу точный ответ в документе…</b>')
+        try:
+            async with ctx.ai_sem:
+                answer, usage = await asyncio.wait_for(
+                    ctx.ai.ask(task, context, model=model),
+                    timeout=20.0,
+                )
+        except asyncio.TimeoutError:
+            await ctx.metrics.inc('material_qa_timeouts', user.id)
+            await state.clear()
+            return await progress.edit_text(
+                '⚠️ <b>Ответ занял слишком много времени</b>\n\n'
+                'Я остановил запрос, чтобы бот не зависал. Попробуй задать вопрос ещё раз.'
+            )
+        except Exception as exc:
+            await ctx.errors.record('material-qa', message.from_user.id, 'material_qa', exc)
+            await state.clear()
+            return await progress.edit_text(
+                '⚠️ <b>Не получилось ответить по документу</b>\n\n'
+                'Материал сохранён. Попробуй ещё раз через несколько секунд.'
+            )
+
         await ctx.usage.record(user.id, model, 'material_qa', usage)
-        await message.answer(esc(answer))
+        await progress.edit_text(esc(answer))
         await state.clear()
 
     return router
