@@ -21,7 +21,7 @@ export default function BetaNoticeWidget() {
   return <div className="beta-gate" role="dialog" aria-modal="true" aria-labelledby="clarify-beta-title">
     <section className="beta-gate-content">
       <div className="beta-gate-icon" aria-hidden="true">🧪</div>
-      <span className="beta-gate-eyebrow">BETA · ACTIVE DEVELOPMENT</span>
+      <span className="beta-gate-eyebrow">БЕТА · АКТИВНАЯ РАЗРАБОТКА</span>
       <h1 id="clarify-beta-title">Clarify всё ещё находится в разработке</h1>
       <p>
         Мы только начинаем развивать Clarify и во многом опираемся на обратную связь пользователей.
