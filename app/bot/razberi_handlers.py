@@ -7,6 +7,7 @@ from app.bot.clarify_chat import build_chat_router
 from app.bot.clarify_context import build_context_router
 from app.bot.clarify_documents import build_document_router
 from app.bot.clarify_growth import build_growth_router
+from app.bot.clarify_image import build_image_router
 from app.bot.clarify_media_links import build_media_links_router
 from app.bot.clarify_menu import build_menu_router
 from app.bot.clarify_precise_qa import build_precise_qa_router
@@ -44,8 +45,11 @@ def build_router(ctx) -> Router:
     # Voice/audio goes through the dedicated multilingual handler before the
     # generic media router so the user sees transcription first, then analysis.
     router.include_router(build_voice_router(ctx))
+    # Photos and image-documents use a bounded Vision fallback path before the
+    # legacy generic media handler.
+    router.include_router(build_image_router(ctx))
     # Text documents use one bounded AI analysis request after local extraction
-    # and indexing. Image documents still fall through to the generic media path.
+    # and indexing. Image documents are intercepted by build_image_router above.
     router.include_router(build_document_router(ctx))
     router.include_router(build_media_router(ctx))
     if ctx.settings.media_download_enabled:
