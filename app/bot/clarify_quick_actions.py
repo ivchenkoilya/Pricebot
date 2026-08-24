@@ -107,7 +107,7 @@ def build_quick_actions_router(ctx) -> Router:
 
     Telegram Android may keep reply-keyboard WebApp buttons bound to a stale
     WebView. The persistent keyboard therefore sends text, and this router
-    creates a fresh inline WebApp button using the same path that works in /start.
+    creates an inline WebApp button using the same path that works in /start.
     """
     router = Router(name='clarify-quick-actions-v2')
 
@@ -166,7 +166,7 @@ def build_quick_actions_router(ctx) -> Router:
             ctx,
             message,
             page='profile',
-            title='👤 <b>Профиль Clarify</b>\n\nОткрой профиль свежей кнопкой ниже:',
+            title='👤 <b>Профиль Clarify</b>\n\nОткрой профиль кнопкой ниже:',
             button='👤 Открыть профиль',
         )
 
@@ -177,7 +177,7 @@ def build_quick_actions_router(ctx) -> Router:
             ctx,
             message,
             page='home',
-            title='🏠 <b>Clarify Mini App</b>\n\nОткрой приложение свежей кнопкой ниже:',
+            title='🏠 <b>Clarify Mini App</b>\n\nОткрой приложение кнопкой ниже:',
             button='🚀 Открыть Clarify',
         )
 
