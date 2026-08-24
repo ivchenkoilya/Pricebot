@@ -16,9 +16,9 @@
     const logo=document.querySelector('img.logo');
     if(logo){
       logo.removeAttribute('srcset');
-      logo.src='/assets/clarify-logo.webp?v=20260824-2';
+      logo.src='data:image/webp;base64,UklGRl4DAABXRUJQVlA4IFIDAABwEACdASosACwAPm0wlEekIqIhI4z4gA2JbACsMuz66R60ajS7cC7dt6An2vNbYDK2rjONj6o+Udxg0xz+q/5f8jvhLzqfVn/S9wf9Xv992APRP/Tku8OMdrdurIFtKKSNmxZff9JcPG0HIGt8YUd1VZ725nA9Ich6PZGt8Op6IA1btvv48CRAI9wwAAD+/uJUxFrCe8Y/kkRshvC1r+K5hR9tcKHR+NnNxG/Jmi0qT0+DiuxEVPdvDBhX8ICXOBgc/w0Tuuwb0D1Fcj/sX90NMVb7ePRtFDE2T9g5PRv6qTMOO45yiZ2jf9LABuPfIOL8M1sslt05YRM2M9IbqB1Qbq0VtAhCqUwaH+abcEixX8/yJuaRboBvjOfkgV8SLvDk7vv+cm9psjhjLMBYv4g9qcmZ7uzijX4sAB5Q3+Oj2G+ct3ZaDDIDgIPi1F3iU1kq8rAff3g1mSg7pOj5JYpe03eTdA79jrOx4S2heoohiXwARpmGHfsxcY/48FmlXpJtbQGlP8d+cci3uwt9a7RnWtHzaTsZ+bkKVnGiyWERUc6finNtkr33w3LbSH8NfomXCpXxfhSLxPamp2WBgjy9mv3BYqnP+aE15DbCAdAdGzNdV0x2V+FS4beI1JSsOrEdbIK7g3WmoMowCGqQj2SFdztASEk0LTxbb2ZXNd/YLyEZ/XdSgU7omKVPMAxfzYR6BGl9frZ38CbxX9ecXRGdytCpT/WVvyU5fIzdxrvoKMHNtjJrmfToZvNd8iZsnbAC4b7SJWo3iDs8LPbXLP//37SV9XqZp+f44gEvWLSTuJVN5iqef3KKm36F1aHn/9D+ORF/K5/vGK07XVX7trZyY8/sv6V4t+C2uSl5h85hBwZFhwCKjWIUuHB1PxM2+1Ypt4VdsZhg/1zlkb3z7gXHCs1XjFVvGesUt/V7JdMV11iar/zN1MNaiBeME11tmI+8OaD73KPwgrhYr/hIrKJw3PPD+u83/fixqP4RSFM2+QBfV1FbeG2hPCVNLCybzPE1X/V9jPbCOAC2toEGH+FIrIGy3shypKb4x5utPlAf8hZC98+v2SsByDy4b5i7cGP0FW5g72XX5+gzXDhVQC6tsUxgHfyuOmHLRjo5DqzSXJAA';
       logo.alt='Clarify';
-      logo.decoding='async';
+      logo.decoding='sync';
       logo.loading='eager';
     }
 
