@@ -195,6 +195,40 @@ class Settings(BaseSettings):
             return None
         return int(value)
 
+    @field_validator('pro_stars_price', mode='before')
+    @classmethod
+    def migrate_legacy_pro_price(cls, value):
+        """Do not let a stale Amvera PRO_STARS_PRICE=299 undo the launch price."""
+        if value in ('', None):
+            return 250
+        parsed = int(value)
+        return 250 if parsed == 299 else max(1, parsed)
+
+    @field_validator('max_stars_price', mode='before')
+    @classmethod
+    def migrate_legacy_max_price(cls, value):
+        """Do not let a stale Amvera MAX_STARS_PRICE=599 undo the launch price."""
+        if value in ('', None):
+            return 350
+        parsed = int(value)
+        return 350 if parsed == 599 else max(1, parsed)
+
+    @field_validator('pro_daily_ai_limit', mode='before')
+    @classmethod
+    def migrate_legacy_pro_daily_limit(cls, value):
+        if value in ('', None):
+            return 100
+        parsed = int(value)
+        return 100 if parsed == 300 else max(1, parsed)
+
+    @field_validator('max_daily_ai_limit', mode='before')
+    @classmethod
+    def migrate_legacy_max_daily_limit(cls, value):
+        if value in ('', None):
+            return 250
+        parsed = int(value)
+        return 250 if parsed == 1000 else max(1, parsed)
+
     @field_validator('pro_voice_max_seconds', mode='before')
     @classmethod
     def cap_pro_voice_length(cls, value):
