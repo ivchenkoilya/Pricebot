@@ -18,6 +18,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.bot.clarify_growth_middleware import GrowthConversionMiddleware
+from app.bot.clarify_performance_middleware import PerformanceMiddleware
 from app.bot.razberi_handlers import build_router
 from app.bot.razberi_middlewares import RateLimitMiddleware
 from app.brand import clarify_banner_jpeg, clarify_banner_webp
@@ -156,10 +157,13 @@ async def main() -> None:
 
     dispatcher = Dispatcher(storage=MemoryStorage())
     limiter = RateLimitMiddleware(settings.requests_per_minute, settings.max_active_jobs_per_user)
+    performance = PerformanceMiddleware(ctx)
     growth_conversion = GrowthConversionMiddleware(ctx)
     dispatcher.message.outer_middleware(limiter)
+    dispatcher.message.outer_middleware(performance)
     dispatcher.message.outer_middleware(growth_conversion)
     dispatcher.callback_query.outer_middleware(limiter)
+    dispatcher.callback_query.outer_middleware(performance)
     dispatcher.callback_query.outer_middleware(growth_conversion)
     dispatcher.include_router(build_router(ctx))
 
@@ -210,15 +214,18 @@ async def main() -> None:
         tasks.append(asyncio.create_task(run_http(), name='http'))
 
     log.info(
-        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s stt=%s whisper=%s webapp=%s',
+        'Clarify %s starting ai=%s endpoint=%s fast=%s smart=%s vision=%s vision_fallback=%s stt=%s whisper=%s webapp=%s media_links=%s',
         settings.version,
         'on' if settings.ai_available else 'off',
         ctx.ai.endpoint_label,
         settings.fast,
         settings.smart,
+        settings.vision,
+        settings.vision_fallback,
         settings.stt_provider,
         settings.whisper_model,
         settings.webapp_url or '/app/',
+        settings.media_download_enabled,
     )
     try:
         await asyncio.gather(*tasks)
