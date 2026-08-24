@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from app.ai.provider import OpenAICompatibleProvider
+from app.ai.resilient_provider import ResilientAIProvider
 from app.config.settings import Settings
 from app.database.session import Database
 from app.processors.stt import build_stt
@@ -67,7 +68,7 @@ def _build_primary_stt(settings: Settings, ai):
 
 
 def build_context(settings: Settings, db: Database, bot) -> AppContext:
-    ai = OpenAICompatibleProvider(settings)
+    ai = ResilientAIProvider(settings)
     materials = MaterialService(db, settings)
     conversations = ConversationContextService(db, materials, settings)
     media_stt_settings = settings.model_copy(update={'whisper_model': settings.media_whisper_model})
