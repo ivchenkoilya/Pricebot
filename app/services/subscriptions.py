@@ -39,21 +39,51 @@ class SubscriptionService:
         expiration,
         is_recurring: bool,
         plan: str = 'PRO',
+        currency: str = 'XTR',
     ) -> datetime:
+        """Activate a Clarify plan idempotently for Stars or an external provider.
+
+        `charge_id` remains the unique provider transaction key. For YooKassa we
+        store it as `yookassa:<payment_id>` in the legacy column so no schema
+        migration is required. `amount` is stored as an integer: Stars for XTR,
+        kopecks for RUB.
+        """
         expires_at = _to_naive_utc(expiration)
         plan = 'MAX' if str(plan).upper() == 'MAX' else 'PRO'
+        currency = (currency or 'XTR').upper()[:8]
         async with self.db.sessions() as session:
             payment = (
                 await session.execute(select(RazberiPayment).where(RazberiPayment.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
-            if payment is None:
-                session.add(RazberiPayment(user_id=user_id, telegram_charge_id=charge_id, currency='XTR', amount=amount, status='paid', is_recurring=is_recurring))
-
             subscription = (
                 await session.execute(select(RazberiSubscription).where(RazberiSubscription.telegram_charge_id == charge_id))
             ).scalar_one_or_none()
+
+            # Webhooks may be delivered more than once. A previously recorded
+            # provider charge must never extend a subscription twice.
+            if payment is not None and subscription is not None:
+                return subscription.expires_at or expires_at
+
+            if payment is None:
+                session.add(
+                    RazberiPayment(
+                        user_id=user_id,
+                        telegram_charge_id=charge_id,
+                        currency=currency,
+                        amount=amount,
+                        status='paid',
+                        is_recurring=is_recurring,
+                    )
+                )
+
             if subscription is None:
-                subscription = RazberiSubscription(user_id=user_id, telegram_charge_id=charge_id, status='active', is_recurring=is_recurring, expires_at=expires_at)
+                subscription = RazberiSubscription(
+                    user_id=user_id,
+                    telegram_charge_id=charge_id,
+                    status='active',
+                    is_recurring=is_recurring,
+                    expires_at=expires_at,
+                )
                 session.add(subscription)
             else:
                 subscription.status = 'active'
@@ -69,6 +99,14 @@ class SubscriptionService:
                 user.notification_settings = json.dumps(data, ensure_ascii=False)
             await session.commit()
         return expires_at
+
+    async def payment_exists(self, charge_id: str) -> bool:
+        async with self.db.sessions() as session:
+            return (
+                await session.execute(
+                    select(RazberiPayment.id).where(RazberiPayment.telegram_charge_id == charge_id)
+                )
+            ).scalar_one_or_none() is not None
 
     async def add_request_pack(self, user_id: int, charge_id: str, amount: int, credits: int) -> int:
         credits = max(0, int(credits))
