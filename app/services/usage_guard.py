@@ -64,6 +64,14 @@ class GuardedUsageService(UsageService):
             queue.popleft()
         return queue
 
+    async def release(self, user_id: int) -> None:
+        """Release one reserved slot when an operation failed before record()."""
+        user_id = int(user_id)
+        async with self._locks[user_id]:
+            pending = self._prune_pending(user_id)
+            if pending:
+                pending.popleft()
+
     async def ai_count_month(self, user_id: int) -> int:
         async with self.db.sessions() as session:
             return int(
