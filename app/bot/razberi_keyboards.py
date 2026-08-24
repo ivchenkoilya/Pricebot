@@ -7,7 +7,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    WebAppInfo,
 )
 
 
@@ -16,7 +15,7 @@ BTN_WRITE = '✍️ Написать'
 BTN_MEMORY = '🧠 Материалы'
 BTN_COMPARE = '🔀 Сравнить'
 BTN_PROJECTS = '📁 Проекты'
-BTN_INBOX = '✨ Важное'
+BTN_INBOX = '⚡ Важное сейчас'
 BTN_PLANS = '💎 Тарифы'
 BTN_SUPPORT = '🛟 Поддержка'
 BTN_SETTINGS = '⚙️ Настройки'
@@ -29,12 +28,13 @@ BTN_BACK = '↩️ Основное меню'
 
 # Bump this on releases that change the Mini App shell. Telegram Android can
 # keep a persistent WebView URL much longer than normal browser cache rules.
-WEBAPP_BUILD_ID = '20260824-prelaunch1'
+WEBAPP_BUILD_ID = '20260824-prelaunch2'
 
 # Old persistent Telegram keyboards can survive a deploy. Keep their labels
 # routable even though the new menu no longer shows them.
 LEGACY_MEMORY = '🧠 Memory'
 LEGACY_MEMORY_RU = '🧠 Мои материалы'
+LEGACY_INBOX = '✨ Важное'
 LEGACY_SUPPORT = '🛟 Поддержка / сообщить об ошибке'
 LEGACY_CLEAR = '🗑 Очистить материалы'
 
@@ -60,19 +60,19 @@ def quick_webapp_url(webapp_url: str = '', page: str | None = None) -> str:
     return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
 
 
-def _webapp_button(text: str, webapp_url: str, page: str) -> KeyboardButton:
-    url = quick_webapp_url(webapp_url, page)
-    if url.startswith('https://'):
-        return KeyboardButton(text=text, web_app=WebAppInfo(url=url))
-    return KeyboardButton(text=text)
-
-
 def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
-    """Compact six-action menu. Rare tools live one tap behind More."""
+    """Compact six-action menu.
+
+    Profile intentionally uses a normal text button. Telegram Android can keep
+    the WebView attached to a persistent reply-keyboard WebApp button stale and
+    open a blank screen. The text action is converted into a fresh inline
+    WebApp button by the bot, using the same reliable path as /start.
+    """
+    del webapp_url
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_UNPACK), KeyboardButton(text=BTN_WRITE)],
-            [KeyboardButton(text=BTN_MEMORY), _webapp_button(BTN_PROFILE, webapp_url, 'profile')],
+            [KeyboardButton(text=BTN_MEMORY), KeyboardButton(text=BTN_PROFILE)],
             [KeyboardButton(text=BTN_PLANS), KeyboardButton(text=BTN_MORE)],
         ],
         resize_keyboard=True,
@@ -81,14 +81,14 @@ def main_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
 
 
 def more_menu(webapp_url: str = '') -> ReplyKeyboardMarkup:
-    """Secondary menu keeps every advanced feature reachable without cluttering onboarding."""
-    mini_app = _webapp_button(BTN_MINIAPP, webapp_url, 'home')
+    """Secondary menu keeps advanced features reachable without stale WebViews."""
+    del webapp_url
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_INBOX), KeyboardButton(text=BTN_PROJECTS)],
             [KeyboardButton(text=BTN_COMPARE), KeyboardButton(text=BTN_SUPPORT)],
             [KeyboardButton(text=BTN_SETTINGS), KeyboardButton(text=BTN_CLEAR)],
-            [KeyboardButton(text=BTN_HELP), mini_app],
+            [KeyboardButton(text=BTN_HELP), KeyboardButton(text=BTN_MINIAPP)],
             [KeyboardButton(text=BTN_BACK)],
         ],
         resize_keyboard=True,
