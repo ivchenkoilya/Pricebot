@@ -57,9 +57,10 @@ class GrowthConversionMiddleware(BaseMiddleware):
                 int(telegram_user.id),
                 '<b>🎁 Clarify пригодился?</b>\n\n'
                 f'Пригласи друга — после его первого успешного разбора вы оба получите <b>+{bonus} AI-запросов</b>.',
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text='🎁 Пригласить друга', callback_data='growth:invite'),
-                ]]),
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text='🎁 Пригласить друга', callback_data='growth:invite')],
+                    [InlineKeyboardButton(text='Не сейчас', callback_data='growth:referral:dismiss')],
+                ]),
             )
         except Exception:
             # Growth must never break the primary Clarify response path.
