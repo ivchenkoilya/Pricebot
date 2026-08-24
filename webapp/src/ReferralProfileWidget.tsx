@@ -87,9 +87,9 @@ export default function ReferralProfileWidget() {
       <div className="referral-head">
         <span className="referral-icon"><Gift /></span>
         <div>
-          <span className="v1-eyebrow">INVITE & EARN</span>
+          <span className="v1-eyebrow">ПРИГЛАСИ И ПОЛУЧИ БОНУС</span>
           <h3>Пригласи друга</h3>
-          <p>После его первого успешного AI-разбора вы оба получите <b>+{stats.referral_bonus}</b> запросов.</p>
+          <p>После его первого успешного ИИ-разбора вы оба получите <b>+{stats.referral_bonus}</b> запросов.</p>
         </div>
       </div>
 
@@ -108,7 +108,7 @@ export default function ReferralProfileWidget() {
         </button>
       </div>
 
-      <small className="referral-note">Бонус начисляется только после первого реального AI-разбора приглашённого пользователя.</small>
+      <small className="referral-note">Бонус начисляется только после первого реального ИИ-разбора приглашённого пользователя.</small>
     </section>,
     slot,
   )
