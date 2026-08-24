@@ -56,6 +56,7 @@ async def _referral_link(ctx, telegram_id: int) -> str:
 
 async def _send_invite(ctx, message: Message, telegram_user) -> None:
     user = await get_user(ctx, telegram_user)
+    await ctx.growth.mark_referral_prompt_clicked(user.id)
     stats = await ctx.growth.stats(user.id)
     link = await _referral_link(ctx, telegram_user.id)
     bonus = int(ctx.settings.referral_bonus_requests)
@@ -188,6 +189,7 @@ def build_growth_router(ctx) -> Router:
                 [InlineKeyboardButton(text='📤 Поделиться', url=_share_url(link, text))],
             ]),
         )
+        await ctx.growth.mark_referral_prompt_clicked(user.id)
         await ctx.metrics.inc('share_opened', user.id)
         await callback.answer()
 
