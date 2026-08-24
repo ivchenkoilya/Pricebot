@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import uuid
 from pathlib import Path
@@ -42,7 +43,7 @@ def _analysis_text(result) -> str:
 
     tasks = list(getattr(result, 'tasks', []) or [])[:2]
     if tasks:
-        parts.append('<b>Что сделать</b>\n' + '\n'.join(f'☐ {html.escape(_short(item, 220))}' for item in tasks))
+        parts.append('<b>Что сделать</b>\n' + '\n'.join(f'• {html.escape(_short(item, 220))}' for item in tasks))
 
     warnings = list(getattr(result, 'warnings', []) or [])[:1]
     if warnings:
@@ -67,14 +68,12 @@ def _voice_card(transcript: str, result, duration: int) -> str:
     if len(text) <= TELEGRAM_SAFE_LIMIT:
         return text
 
-    # Keep the analysis visible and shrink only the transcript preview.
     fixed = (
         f'🎤 <b>Clarify</b> · {minutes:02d}:{seconds:02d}\n\n'
         f'📝 <b>Расшифровка</b>\n\n\n'
         f'🧠 <b>Что понял Clarify</b>\n{analysis}'
     )
     available = max(240, TELEGRAM_SAFE_LIMIT - len(fixed) - 120)
-    # HTML escaping can expand the text, so use a conservative raw-character cap.
     raw_limit = max(220, min(900, available // 2))
     preview = html.escape(_transcript_preview(transcript, raw_limit))
     return (
@@ -96,20 +95,12 @@ def _cached_voice_card(material, duration: int) -> str:
 
 
 async def _transcribe_voice(ctx, path: str) -> str:
-    """Use SpeechKit language auto-detection when Yandex is the primary STT.
-
-    Clarify users often mix Russian and English in one Telegram voice note.
-    SpeechKit v3 supports language_code=['auto']; the current provider already
-    forwards the language argument into that field. Local Whisper keeps the
-    explicit Russian hint because its adapter expects a concrete language code.
-    """
+    """Use SpeechKit language auto-detection when Yandex is the primary STT."""
     provider = (ctx.settings.stt_provider or 'local').strip().lower()
     language = 'auto' if provider == 'yandex' else 'ru'
     try:
         return await ctx.stt.transcribe(path, language)
     except Exception:
-        # If Yandex is unavailable and its local fallback rejects the special
-        # "auto" code, retry through the ordinary Russian-safe path.
         if language != 'ru':
             return await ctx.stt.transcribe(path, 'ru')
         raise
@@ -158,11 +149,19 @@ def build_voice_router(ctx) -> Router:
             extension = '.audio'
         path = Path(settings.data_dir, 'tmp', request_id + extension)
         transcript = ''
+        loop = asyncio.get_running_loop()
+        total_started = loop.time()
 
         try:
+            stage = loop.time()
             await ctx.bot.download(media, destination=path)
+            await ctx.metrics.inc('voice_download_latency_ms', user.id, max(1, int((loop.time() - stage) * 1000)))
+
+            stage = loop.time()
             async with ctx.stt_sem:
                 transcript = await _transcribe_voice(ctx, str(path))
+            stt_ms = max(1, int((loop.time() - stage) * 1000))
+            await ctx.metrics.inc('stt_latency_ms', user.id, stt_ms)
             transcript = transcript.strip()
             if not transcript:
                 return await progress.edit_text('⚠️ Речь не обнаружена.')
@@ -173,8 +172,12 @@ def build_voice_router(ctx) -> Router:
                 f'📝 <b>Расшифровка</b>\n{live_preview}'
             )
 
-            async with ctx.ai_sem:
-                result, usage, model = await TextProcessor(ctx.ai).process(transcript, 'голосовое')
+            stage = loop.time()
+            ai_timeout = max(10.0, min(35.0, float(settings.openai_timeout)))
+            async with asyncio.timeout(ai_timeout):
+                async with ctx.ai_sem:
+                    result, usage, model = await TextProcessor(ctx.ai).process(transcript, 'голосовое')
+            await ctx.metrics.inc('voice_ai_latency_ms', user.id, max(1, int((loop.time() - stage) * 1000)))
             await ctx.usage.record(user.id, model, 'voice', usage)
 
             material = await ctx.materials.create(
@@ -187,10 +190,22 @@ def build_voice_router(ctx) -> Router:
                 getattr(media, 'file_unique_id', None),
             )
             await ctx.metrics.inc('voice_processed', user.id)
+            await ctx.metrics.inc('voice_total_latency_ms', user.id, max(1, int((loop.time() - total_started) * 1000)))
             await progress.edit_text(
                 _voice_card(transcript, result, duration),
                 reply_markup=actions(material.id, material.type),
             )
+        except TimeoutError as exc:
+            await ctx.errors.record(request_id, message.from_user.id, 'voice_ai_timeout', exc)
+            await ctx.metrics.inc('voice_timeouts', user.id)
+            if transcript:
+                preview = html.escape(_transcript_preview(transcript, 2200))
+                await progress.edit_text(
+                    f'📝 <b>Расшифровка</b>\n{preview}\n\n'
+                    '⚠️ Расшифровка готова, но AI-анализ занял слишком много времени. Можешь сразу задать вопрос по тексту.'
+                )
+            else:
+                await progress.edit_text('⚠️ Обработка заняла слишком много времени. Попробуй ещё раз.')
         except Exception as exc:
             await ctx.errors.record(request_id, message.from_user.id, 'voice', exc)
             if transcript:
