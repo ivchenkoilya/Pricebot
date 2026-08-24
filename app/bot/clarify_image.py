@@ -23,8 +23,6 @@ def build_image_router(ctx) -> Router:
 
     async def process_image(message: Message, media, *, extension: str, caption: str, file_name: str = ''):
         user = await get_user(ctx, message.from_user)
-        if not await ensure_quota(ctx, message, user, feature='vision'):
-            return
 
         file_unique_id = getattr(media, 'file_unique_id', None)
         cached = await ctx.materials.by_file_unique(user.id, file_unique_id)
@@ -36,6 +34,9 @@ def build_image_router(ctx) -> Router:
 
         if int(getattr(media, 'file_size', 0) or 0) > settings.max_file_size_mb * 1024 * 1024:
             return await message.answer(f'⚠️ Изображение больше {settings.max_file_size_mb} МБ.')
+
+        if not await ensure_quota(ctx, message, user, feature='vision'):
+            return
 
         request_id = uuid.uuid4().hex
         path = Path(settings.data_dir, 'tmp', request_id + (extension or '.jpg'))
