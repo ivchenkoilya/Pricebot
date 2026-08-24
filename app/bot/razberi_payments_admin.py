@@ -23,9 +23,9 @@ def _products(settings) -> dict[str, dict]:
     return {
         'pro': {'kind': 'plan', 'plan': 'PRO', 'price': settings.pro_stars_price, 'title': 'Clarify PRO', 'label': 'PRO · 30 дней'},
         'max': {'kind': 'plan', 'plan': 'MAX', 'price': settings.max_stars_price, 'title': 'Clarify PRO MAX', 'label': 'PRO MAX · 30 дней'},
-        'pack100': {'kind': 'pack', 'credits': 100, 'price': settings.request_pack_100_stars, 'title': '+100 запросов'},
+        'pack50': {'kind': 'pack', 'credits': 50, 'price': settings.request_pack_50_stars, 'title': '+50 запросов'},
+        'pack150': {'kind': 'pack', 'credits': 150, 'price': settings.request_pack_150_stars, 'title': '+150 запросов'},
         'pack500': {'kind': 'pack', 'credits': 500, 'price': settings.request_pack_500_stars, 'title': '+500 запросов'},
-        'pack2000': {'kind': 'pack', 'credits': 2000, 'price': settings.request_pack_2000_stars, 'title': '+2000 запросов'},
     }
 
 
@@ -33,8 +33,11 @@ def _plans_keyboard(settings) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f'👑 PRO · {settings.pro_stars_price} ⭐', callback_data='plan:buy:pro')],
         [InlineKeyboardButton(text=f'💎 PRO MAX · {settings.max_stars_price} ⭐', callback_data='plan:buy:max')],
-        [InlineKeyboardButton(text=f'+100 · {settings.request_pack_100_stars} ⭐', callback_data='plan:buy:pack100'), InlineKeyboardButton(text=f'+500 · {settings.request_pack_500_stars} ⭐', callback_data='plan:buy:pack500')],
-        [InlineKeyboardButton(text=f'+2000 запросов · {settings.request_pack_2000_stars} ⭐', callback_data='plan:buy:pack2000')],
+        [
+            InlineKeyboardButton(text=f'+50 · {settings.request_pack_50_stars} ⭐', callback_data='plan:buy:pack50'),
+            InlineKeyboardButton(text=f'+150 · {settings.request_pack_150_stars} ⭐', callback_data='plan:buy:pack150'),
+        ],
+        [InlineKeyboardButton(text=f'+500 запросов · {settings.request_pack_500_stars} ⭐', callback_data='plan:buy:pack500')],
     ])
 
 
@@ -56,7 +59,7 @@ def _plan_text(settings, current: str, bonus: int) -> str:
         f'• голосовые до {settings.max_voice_max_seconds // 60} минут\n'
         f'• документы до {settings.max_document_max_pages} страниц\n'
         '• максимальные лимиты Clarify\n\n'
-        '<b>Нужны только запросы?</b> Докупи пакет — он не сгорает в конце дня и расходуется после дневного лимита.'
+        '<b>Нужны только запросы?</b> Пакеты +50, +150 и +500 не сгорают и расходуются только после обычного лимита.'
     )
 
 
@@ -75,7 +78,7 @@ async def _invoice(ctx, user, product: str) -> str:
         )
     return await ctx.bot.create_invoice_link(
         title=item['title'],
-        description=f'{item["credits"]} дополнительных AI-запросов Clarify',
+        description=f'{item["credits"]} дополнительных AI-запросов Clarify. Не сгорают.',
         payload=f'clarify_pack:{item["credits"]}:{user.id}',
         provider_token='', currency='XTR',
         prices=[LabeledPrice(label=item['title'], amount=item['price'])],
@@ -106,7 +109,7 @@ def build_payments_admin_router(ctx) -> Router:
         user = await get_user(ctx, callback.from_user)
         item = _products(settings).get(product)
         if not item:
-            return await callback.answer('Неизвестный продукт', show_alert=True)
+            return await callback.answer('Этот пакет обновлён. Открой «Тарифы» ещё раз.', show_alert=True)
         if clarify_plan(user, settings) == 'OWNER' and item['kind'] == 'plan':
             return await callback.answer('OWNER уже имеет Unlimited-доступ', show_alert=True)
         try:
