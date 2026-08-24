@@ -22,12 +22,13 @@ export default function BetaNoticeWidget() {
     <section className="beta-gate-content">
       <div className="beta-gate-icon" aria-hidden="true">🧪</div>
       <span className="beta-gate-eyebrow">BETA · ACTIVE DEVELOPMENT</span>
-      <h1 id="clarify-beta-title">Clarify находится в разработке</h1>
+      <h1 id="clarify-beta-title">Clarify всё ещё находится в разработке</h1>
       <p>
-        Некоторые функции пока могут работать нестабильно, ошибаться или отвечать дольше обычного.
-        Если заметишь проблему — напиши в поддержку. Так мы быстрее найдём и исправим её.
+        Мы только начинаем развивать Clarify и во многом опираемся на обратную связь пользователей.
+        Если что-то работает не так, долго загружается, отвечает неточно или вам просто не хватает какой-то функции — напишите нам в поддержку.
+        Каждое сообщение помогает нам находить проблемы, улучшать Clarify и выпускать обновления быстрее.
       </p>
-      <div className="beta-gate-support-hint">🛟 После входа кнопка «Поддержка» будет подсвечена.</div>
+      <div className="beta-gate-support-hint">🛟 Нашли проблему? Напишите в поддержку — после входа кнопка будет подсвечена.</div>
       <button className="beta-gate-accept" onClick={accept}>Хорошо</button>
     </section>
   </div>
