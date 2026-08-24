@@ -8,6 +8,20 @@ def test_normalize_url_removes_tracking_but_keeps_product_params():
     assert value == 'https://example.com/product?id=42&color=black'
 
 
+def test_normalize_url_adds_https_to_plain_domain():
+    assert url_utils.normalize_url('vk.ru') == 'https://vk.ru/'
+    assert url_utils.normalize_url('www.example.com/path?q=1') == 'https://www.example.com/path?q=1'
+
+
+def test_find_urls_supports_plain_domains_without_matching_email():
+    text = 'Смотри vk.ru и https://example.com/a. Почта user@example.com не ссылка.'
+    assert url_utils.find_urls(text) == ['https://vk.ru/', 'https://example.com/a']
+
+
+def test_strip_urls_removes_http_and_plain_domain_tokens():
+    assert url_utils.strip_urls('разбери vk.ru пожалуйста') == 'разбери пожалуйста'
+
+
 def test_normalize_rejects_non_http():
     with pytest.raises(ValueError):
         url_utils.normalize_url('file:///etc/passwd')
