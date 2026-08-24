@@ -23,12 +23,14 @@ from app.bot.razberi_keyboards import (
     BTN_UNPACK,
     BTN_WRITE,
     LEGACY_CLEAR,
+    LEGACY_INBOX,
     LEGACY_MEMORY,
     LEGACY_SUPPORT,
     draft_actions,
     materials_list,
     plans_keyboard,
     projects_list,
+    quick_webapp_url,
 )
 from app.bot.razberi_states import CompareMaterials, SupportMessage, WriteForMe
 from app.database.razberi_models import Reminder
@@ -93,7 +95,7 @@ def build_menu_router(ctx) -> Router:
             reply_markup=materials_list(items),
         )
 
-    @router.message(F.text == BTN_INBOX)
+    @router.message(F.text.in_({BTN_INBOX, LEGACY_INBOX}))
     async def inbox(message: Message):
         user = await get_user(ctx, message.from_user)
         materials = await ctx.materials.latest(user.id, 24)
@@ -107,11 +109,14 @@ def build_menu_router(ctx) -> Router:
         data = build_inbox(materials, reminders, limit=6)
         if not data['items']:
             return await message.answer(
-                '✨ <b>AI Inbox</b>\n\n✅ Сейчас Clarify не видит срочных задач, сроков или рисков в последних материалах.'
+                '⚡ <b>Важное сейчас</b>\n\n'
+                'Здесь Clarify собирает задачи, ближайшие сроки, риски и напоминания из последних материалов.\n\n'
+                '✅ Сейчас срочных пунктов не найдено.'
             )
         icons = {'task': '✅', 'deadline': '⏰', 'risk': '⚠️', 'reminder': '🔔'}
         parts = [
-            '✨ <b>AI Inbox</b>',
+            '⚡ <b>Важное сейчас</b>',
+            'Здесь Clarify собирает задачи, ближайшие сроки, риски и напоминания из последних материалов.',
             f"✅ Задачи: <b>{data['tasks']}</b> · ⏰ Сроки: <b>{data['deadlines']}</b> · ⚠️ Риски: <b>{data['risks']}</b>",
         ]
         for item in data['items'][:6]:
@@ -173,10 +178,10 @@ def build_menu_router(ctx) -> Router:
             f'• голосовые, аудио и видео до <b>{settings.max_voice_max_seconds // 60} мин</b>\n'
             f'• документы до <b>{settings.max_document_max_pages} страниц</b>\n\n'
             '➕ <b>Дополнительные запросы</b>\n'
-            f'• +100 — <b>{settings.request_pack_100_stars} ⭐</b>\n'
-            f'• +500 — <b>{settings.request_pack_500_stars} ⭐</b>\n'
-            f'• +2000 — <b>{settings.request_pack_2000_stars} ⭐</b>\n\n'
-            '<i>Пакеты начинают расходоваться только после дневного лимита тарифа.</i>',
+            f'• +50 — <b>{settings.request_pack_50_stars} ⭐</b>\n'
+            f'• +150 — <b>{settings.request_pack_150_stars} ⭐</b>\n'
+            f'• +500 — <b>{settings.request_pack_500_stars} ⭐</b>\n\n'
+            '<i>Пакеты не сгорают и расходуются только после обычного лимита тарифа.</i>',
             reply_markup=plans_keyboard(settings),
         )
 
@@ -222,12 +227,10 @@ def build_menu_router(ctx) -> Router:
 
     @router.message(F.text == BTN_MINIAPP)
     async def miniapp_fallback(message: Message):
-        # This is used by legacy/stale keyboards that send text instead of
-        # opening the WebApp themselves. Use exactly the same URL as /start.
-        url = (settings.webapp_url or '').strip()
+        url = quick_webapp_url(settings.webapp_url, 'home')
         if url.startswith('https://'):
             return await message.answer(
-                '🏠 <b>Clarify Mini App</b>\n\nНажми кнопку ниже, чтобы открыть приложение:',
+                '🏠 <b>Clarify Mini App</b>\n\nНажми свежую кнопку ниже, чтобы открыть приложение:',
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(text='🚀 Открыть Mini App', web_app=WebAppInfo(url=url))
                 ]]),
