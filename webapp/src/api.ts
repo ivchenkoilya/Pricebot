@@ -33,9 +33,14 @@ export function hasTelegramAuth() {
 function localizeText(value: string) {
   return value
     .replaceAll('Memory', 'Материалы')
-    .replaceAll('Smart AI', 'Умный AI')
-    .replaceAll('Fast AI', 'Быстрый AI')
+    .replaceAll('Smart AI', 'Умный ИИ')
+    .replaceAll('Fast AI', 'Быстрый ИИ')
     .replaceAll('AI Inbox', 'Важное')
+    .replaceAll('AI-запрос', 'ИИ-запрос')
+    .replaceAll('AI запрос', 'ИИ-запрос')
+    .replaceAll('AI-разбор', 'ИИ-разбор')
+    .replaceAll('AI-действие', 'ИИ-действие')
+    .replaceAll('Unlimited', 'Без ограничений')
 }
 
 function localizePayload<T>(path: string, payload: T): T {
