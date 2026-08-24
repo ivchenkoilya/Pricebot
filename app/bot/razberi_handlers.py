@@ -12,6 +12,7 @@ from app.bot.clarify_media_links import build_media_links_router
 from app.bot.clarify_menu import build_menu_router
 from app.bot.clarify_precise_qa import build_precise_qa_router
 from app.bot.clarify_prelaunch_menu import build_prelaunch_menu_router
+from app.bot.clarify_referral_dismiss import build_referral_dismiss_router
 from app.bot.clarify_start import build_start_router
 from app.bot.clarify_stars import build_stars_router
 from app.bot.clarify_support import build_support_router
@@ -30,6 +31,7 @@ def build_router(ctx) -> Router:
     # support FSM is active, user messages are transport and must never reach AI.
     router.include_router(build_start_router(ctx))
     router.include_router(build_growth_router(ctx))
+    router.include_router(build_referral_dismiss_router(ctx))
     router.include_router(build_stars_router(ctx))
     router.include_router(build_support_router(ctx))
     router.include_router(build_broadcast_router(ctx))
