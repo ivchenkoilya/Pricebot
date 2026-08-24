@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState, type ReactNode } from 'react'
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Bug, Check, Image as ImageIcon, LifeBuoy, Lightbulb, MessageCircle, Send, X } from 'lucide-react'
 import { api, apiForm, haptic, hasTelegramAuth, successHaptic } from './api'
 
@@ -19,15 +19,41 @@ export default function SupportWidget() {
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
+  const [highlighted, setHighlighted] = useState(false)
+  const highlightTimer = useRef<number | null>(null)
 
   useEffect(() => {
+    const stopHighlight = () => {
+      setHighlighted(false)
+      if (highlightTimer.current !== null) {
+        window.clearTimeout(highlightTimer.current)
+        highlightTimer.current = null
+      }
+    }
+
     const openSupport = () => {
+      stopHighlight()
       setSent(false)
       setError('')
       setOpen(true)
     }
+
+    const highlightSupport = () => {
+      stopHighlight()
+      setHighlighted(true)
+      highlightTimer.current = window.setTimeout(() => {
+        setHighlighted(false)
+        highlightTimer.current = null
+      }, 9000)
+    }
+
     window.addEventListener('clarify:open-support', openSupport)
-    return () => window.removeEventListener('clarify:open-support', openSupport)
+    window.addEventListener('clarify:highlight-support', highlightSupport)
+    return () => {
+      window.removeEventListener('clarify:open-support', openSupport)
+      window.removeEventListener('clarify:highlight-support', highlightSupport)
+      if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current)
+    }
   }, [])
 
   if (!hasTelegramAuth()) return null
@@ -43,6 +69,17 @@ export default function SupportWidget() {
     setFile(null)
     setSent(false)
     setError('')
+  }
+
+  const openFromButton = () => {
+    haptic()
+    setHighlighted(false)
+    if (highlightTimer.current !== null) {
+      window.clearTimeout(highlightTimer.current)
+      highlightTimer.current = null
+    }
+    reset()
+    setOpen(true)
   }
 
   const submit = async (event: FormEvent) => {
@@ -76,8 +113,9 @@ export default function SupportWidget() {
   }
 
   return <>
-    {!open && <button className="support-fab" aria-label="Поддержка" onClick={() => { haptic(); reset(); setOpen(true) }}>
+    {!open && <button className={`support-fab ${highlighted ? 'support-fab-highlighted' : ''}`} aria-label="Поддержка" onClick={openFromButton}>
       <LifeBuoy /><span>Поддержка</span>
+      {highlighted && <i className="support-fab-hint">сюда, если что-то не работает</i>}
     </button>}
 
     {open && <div className="support-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) close() }}>
