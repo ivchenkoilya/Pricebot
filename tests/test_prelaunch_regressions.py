@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+import asyncio
 
 import pytest
 
@@ -11,6 +11,7 @@ from app.config.settings import Settings
 from app.database.models import User
 from app.database.razberi_models import AIUsage
 from app.services.growth_prompt import GrowthPromptService
+from app.services.usage_guard import GuardedUsageService
 from app.webapp.plans_v2 import _packs
 
 
@@ -98,3 +99,58 @@ async def test_referral_prompt_starts_on_third_success_and_has_cooldown(db):
 
     # Enough successes exist, but clicking the invite CTA suppresses it for a week.
     assert await growth.referral_prompt_due(7001) is False
+
+
+@pytest.mark.asyncio
+async def test_referral_dismissal_is_recorded_and_makes_future_cta_rarer(db):
+    database, base_settings = db
+    settings = base_settings.model_copy(update={
+        'referral_prompt_first_success': 1,
+        'referral_prompt_every_successes': 1,
+        'referral_prompt_cooldown_days': 3,
+    })
+    growth = GrowthPromptService(database, settings)
+
+    async with database.sessions() as session:
+        user = User(telegram_id=7002, username='dismiss-user', first_name='Dismiss')
+        session.add(user)
+        await session.flush()
+        user_id = user.id
+        session.add(AIUsage(user_id=user_id, model='test', feature='text'))
+        await session.commit()
+
+    assert await growth.referral_prompt_due(7002) is True
+    assert await growth.mark_referral_prompt_dismissed(user_id) == 1
+
+    async with database.sessions() as session:
+        session.add(AIUsage(user_id=user_id, model='test', feature='next'))
+        await session.commit()
+
+    # The base 3-day cooldown is doubled after the first explicit dismissal.
+    assert await growth.referral_prompt_due(7002) is False
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_cannot_reserve_the_same_last_daily_slot(db):
+    database, base_settings = db
+    settings = base_settings.model_copy(update={'free_daily_ai_limit': 1})
+    usage = GuardedUsageService(database, settings)
+
+    async with database.sessions() as session:
+        user = User(telegram_id=7100, username='quota-user', first_name='Quota')
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        user_id = user.id
+
+    # Use the detached object deliberately: the quota service only needs its
+    # immutable identity/plan fields and reads persisted usage separately.
+    first, second = await asyncio.gather(
+        usage.allowed(user),
+        usage.allowed(user),
+    )
+    assert sorted([first, second]) == [False, True]
+
+    # Completing the reserved operation persists the usage record.
+    await usage.record(user_id, 'test', 'text', {'input': 1, 'output': 1})
+    assert await usage.ai_count_today(user_id) == 1
