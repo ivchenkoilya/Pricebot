@@ -9,9 +9,60 @@
       button.btn::after,button.navbtn::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.14) 48%,transparent 76%);transform:translateX(-130%);transition:transform .42s ease;pointer-events:none}
       button.btn:hover::after,button.navbtn:hover::after{transform:translateX(130%)}
       button.btn:active,button.navbtn:active{transform:scale(.985)!important}
-      @media(max-width:620px){.logo{width:48px!important;height:48px!important}.brand{gap:12px!important}}
+      .pack-section{margin-top:58px;padding-top:10px}
+      .pack-head{max-width:720px;margin-bottom:24px}
+      .pack-head h2{margin-bottom:10px}
+      .pack-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+      .pack-card{min-height:300px;display:flex;flex-direction:column;padding:25px;border-radius:24px;border:1px solid rgba(118,169,255,.17);background:radial-gradient(circle at 90% 0,rgba(95,80,255,.13),transparent 34%),linear-gradient(180deg,rgba(15,30,68,.78),rgba(7,14,35,.86));box-shadow:inset 0 1px rgba(255,255,255,.035),0 20px 55px rgba(0,0,0,.18)}
+      .pack-card.best{border-color:rgba(75,171,255,.5);box-shadow:0 22px 60px rgba(44,105,255,.14),inset 0 1px rgba(255,255,255,.05)}
+      .pack-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+      .pack-count{font-size:38px;font-weight:920;letter-spacing:-1.8px;margin:18px 0 4px}
+      .pack-price{font-size:25px;font-weight:850;color:#f5f8ff;margin-bottom:16px}
+      .pack-copy{color:#a7b5d7;font-size:14px;line-height:1.55;flex:1;margin:0 0 20px}
+      .pack-card .btn{width:100%}
+      .pack-note{margin-top:16px;color:#8190b5;font-size:13px;line-height:1.55}
+      @media(max-width:900px){.pack-grid{grid-template-columns:1fr}}
+      @media(max-width:620px){.logo{width:48px!important;height:48px!important}.brand{gap:12px!important}.pack-section{margin-top:42px}.pack-card{min-height:0;padding:22px}.pack-count{font-size:36px}}
     `;
     document.head.appendChild(style);
+
+    const prices=document.querySelector('.prices');
+    if(prices && !document.querySelector('.pack-section')){
+      const section=document.createElement('div');
+      section.className='pack-section';
+      section.innerHTML=`
+        <div class="pack-head">
+          <div class="kicker">Дополнительные запросы</div>
+          <h2>Нужно больше <span class="grad">запросов?</span></h2>
+          <p class="lead">Докупить запросы можно отдельно от подписки. Они не сгорают и начинают расходоваться только после обычного дневного лимита тарифа.</p>
+        </div>
+        <div class="pack-grid">
+          <div class="pack-card">
+            <div class="pack-top"><h3>ПАКЕТ</h3></div>
+            <div class="pack-count">+50</div>
+            <div class="pack-price">50 ⭐</div>
+            <p class="pack-copy">Небольшой запас дополнительных AI-запросов для редких ситуаций, когда дневного лимита не хватило.</p>
+            <a class="btn" href="/telegram/open">Купить в Telegram</a>
+          </div>
+          <div class="pack-card best">
+            <div class="pack-top"><h3>ПАКЕТ</h3><span class="badge">ВЫГОДНО</span></div>
+            <div class="pack-count">+150</div>
+            <div class="pack-price">100 ⭐</div>
+            <p class="pack-copy">Оптимальный запас для активного использования Clarify без перехода на более высокий тариф.</p>
+            <a class="btn primary" href="/telegram/open">Купить в Telegram</a>
+          </div>
+          <div class="pack-card">
+            <div class="pack-top"><h3>ПАКЕТ</h3></div>
+            <div class="pack-count">+500</div>
+            <div class="pack-price">250 ⭐</div>
+            <p class="pack-copy">Большой несгораемый запас запросов для интенсивной работы и крупных задач.</p>
+            <a class="btn" href="/telegram/open">Купить в Telegram</a>
+          </div>
+        </div>
+        <div class="pack-note">⭐ Оплата пакетов Stars проходит внутри Telegram. После покупки запросы автоматически добавляются к аккаунту Clarify.</div>
+      `;
+      prices.insertAdjacentElement('afterend',section);
+    }
 
     const logo=document.querySelector('img.logo');
     if(logo){
