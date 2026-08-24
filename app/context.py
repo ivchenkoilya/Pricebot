@@ -25,6 +25,7 @@ from app.services.media_downloader import MediaDownloader
 from app.services.page_reader import PageReader
 from app.services.reminders import ReminderService
 from app.services.subscriptions import SubscriptionService
+from app.services.usage_guard import GuardedUsageService
 
 
 @dataclass(slots=True)
@@ -75,7 +76,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         ai=ai,
         bot=bot,
         users=UserService(db, settings),
-        usage=UsageService(db, settings),
+        usage=GuardedUsageService(db, settings),
         materials=materials,
         conversations=conversations,
         projects=ProjectService(db),
