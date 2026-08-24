@@ -21,6 +21,7 @@ from app.services.core import (
 )
 from app.services.fast_media import FastMediaDownloader
 from app.services.growth import GrowthService
+from app.services.growth_prompt import GrowthPromptService
 from app.services.media_downloader import MediaDownloader
 from app.services.page_reader import PageReader
 from app.services.reminders import ReminderService
@@ -86,7 +87,7 @@ def build_context(settings: Settings, db: Database, bot) -> AppContext:
         privacy=PrivacyService(db, materials),
         reminders=ReminderService(db),
         subscriptions=SubscriptionService(db),
-        growth=GrowthService(db, settings),
+        growth=GrowthPromptService(db, settings),
         page_reader=PageReader(settings),
         media_downloader=FastMediaDownloader(settings),
         stt=_build_primary_stt(settings, ai),
