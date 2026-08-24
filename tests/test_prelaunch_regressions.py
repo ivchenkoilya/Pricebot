@@ -55,7 +55,7 @@ def test_webapp_keyboard_link_keeps_deep_page_and_cache_buster():
     url = quick_webapp_url('https://pricebot2-ivch.amvera.io/app/', 'profile')
     assert 'page=profile' in url
     assert 'launch=keyboard' in url
-    assert '20260824-prelaunch1' in url
+    assert '20260824-prelaunch2' in url
 
 
 @pytest.mark.asyncio
