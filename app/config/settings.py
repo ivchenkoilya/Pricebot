@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     fast_model: str = ''
     smart_model: str = ''
     vision_model: str = ''
+    vision_fallback_model: str = ''
+    vision_timeout: float = 30.0
     openai_timeout: float = 60.0
     openai_max_output_tokens: int = 1400
     fast_text_chars: int = 12_000
@@ -64,12 +66,16 @@ class Settings(BaseSettings):
     document_ocr_concurrency: int = 1
     document_ocr_page_timeout: float = 45.0
 
-    # Clarify plans. All prices are Telegram Stars (XTR) and can be overridden in Amvera.
-    pro_stars_price: int = 299
-    max_stars_price: int = 599
+    # Clarify plans. Prices are Telegram Stars (XTR). Daily limits keep the
+    # product comfortable to use while the monthly fair-use guard protects a
+    # low-price subscription from automated / abusive traffic.
+    pro_stars_price: int = 250
+    max_stars_price: int = 350
     free_daily_ai_limit: int = 20
-    pro_daily_ai_limit: int = 300
-    max_daily_ai_limit: int = 1000
+    pro_daily_ai_limit: int = 100
+    max_daily_ai_limit: int = 250
+    pro_monthly_ai_limit: int = 1_500
+    max_monthly_ai_limit: int = 4_000
     free_voice_daily_limit: int = 3
     free_voice_max_seconds: int = 600
     pro_voice_max_seconds: int = 1800
@@ -79,18 +85,33 @@ class Settings(BaseSettings):
     max_document_max_pages: int = 200
     max_file_size_mb: int = 25
 
+    # Future-ready operation weights. Current quota remains request-based, but
+    # these values give the backend one configurable place for weighted usage
+    # once real production telemetry is available.
+    usage_units_text: int = 1
+    usage_units_vision: int = 2
+    usage_units_document: int = 3
+    usage_units_large_document: int = 5
+
     # Growth / referrals. Bonus is awarded only after the referred user completes
     # a successful AI operation and is stored in the same bonus balance used by
-    # one-time request packs.
+    # one-time request packs. Referral CTA is intentionally sparse, not spammy.
     referral_bonus_requests: int = 20
+    referral_prompt_first_success: int = 3
+    referral_prompt_every_successes: int = 5
+    referral_prompt_cooldown_days: int = 3
+    referral_prompt_after_click_days: int = 7
 
-    # One-time request packs. They are spent only after the daily plan allowance is exhausted.
-    request_pack_100_stars: int = 99
-    request_pack_500_stars: int = 349
-    request_pack_2000_stars: int = 999
+    # One-time request packs. They never expire and are spent only after the
+    # daily plan allowance is exhausted.
+    request_pack_50_stars: int = 50
+    request_pack_150_stars: int = 100
+    request_pack_500_stars: int = 250
 
-    # Public media links: YouTube / Shorts / TikTok (+ best-effort Instagram/X)
-    media_download_enabled: bool = True
+    # Public media-link extraction/downloading is intentionally disabled until
+    # a stable proxy path is configured. Uploaded Telegram video can still use
+    # the separate direct-video handler.
+    media_download_enabled: bool = False
     media_max_file_mb: int = 100
     media_free_max_file_mb: int = 50
     media_max_duration_minutes: int = 60
@@ -232,6 +253,10 @@ class Settings(BaseSettings):
     @property
     def vision(self) -> str:
         return self.vision_model.strip() or self.smart_model.strip() or self.openai_model.strip()
+
+    @property
+    def vision_fallback(self) -> str:
+        return self.vision_fallback_model.strip() or self.fast_model.strip() or self.openai_model.strip()
 
     @property
     def resolved_whisper_model(self) -> str:
