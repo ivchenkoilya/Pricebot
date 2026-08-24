@@ -18,6 +18,7 @@ from app.bot.razberi_keyboards import (
     BTN_WRITE,
     main_menu,
     more_menu,
+    quick_webapp_url,
 )
 
 
@@ -34,20 +35,24 @@ def test_main_menu_contains_only_core_product_actions():
     ]
 
 
-def test_profile_is_real_webapp_button_for_https_url():
+def test_profile_quick_button_is_text_backed_to_avoid_stale_android_webview():
     menu = main_menu('https://pricebot2-ivch.amvera.io/app/')
     profile = menu.keyboard[1][1]
     assert profile.text == BTN_PROFILE
-    assert profile.web_app is not None
-    parsed = urlsplit(profile.web_app.url)
+    assert profile.web_app is None
+
+
+def test_fresh_inline_webapp_url_keeps_profile_deep_link_and_cache_buster():
+    url = quick_webapp_url('https://pricebot2-ivch.amvera.io/app/', 'profile')
+    parsed = urlsplit(url)
     assert (parsed.scheme, parsed.netloc, parsed.path) == ('https', 'pricebot2-ivch.amvera.io', '/app/')
     query = parse_qs(parsed.query)
     assert query.get('launch') == ['keyboard']
     assert query.get('page') == ['profile']
-    assert query.get('v')
+    assert query.get('v') == ['20260824-prelaunch2']
 
 
-def test_more_menu_keeps_advanced_features_reachable():
+def test_more_menu_keeps_advanced_features_reachable_without_direct_webapp_button():
     menu = more_menu('https://pricebot2-ivch.amvera.io/app/')
     assert _texts(menu) == [
         BTN_INBOX, BTN_PROJECTS,
@@ -57,13 +62,15 @@ def test_more_menu_keeps_advanced_features_reachable():
         BTN_BACK,
     ]
     mini = menu.keyboard[3][1]
-    assert mini.web_app is not None
-    query = parse_qs(urlsplit(mini.web_app.url).query)
+    assert mini.text == BTN_MINIAPP
+    assert mini.web_app is None
+
+
+def test_quick_webapp_url_normalizes_old_amvera_host():
+    url = quick_webapp_url('http://pricebot2.ivch.amvera.io', 'home')
+    parsed = urlsplit(url)
+    assert parsed.scheme == 'https'
+    assert parsed.netloc == 'pricebot2-ivch.amvera.io'
+    assert parsed.path == '/app/'
+    query = parse_qs(parsed.query)
     assert query.get('page') == ['home']
-
-
-def test_webapp_buttons_fall_back_to_text_without_https():
-    menu = main_menu('')
-    assert menu.keyboard[1][1].web_app is None
-    advanced = more_menu('')
-    assert advanced.keyboard[3][1].web_app is None
