@@ -72,8 +72,15 @@ class GrowthPromptService(GrowthService):
             if not count_due:
                 return False
 
+            dismiss_count = max(0, int(data.get('clarify_referral_prompt_dismiss_count', 0) or 0))
+            # A person who repeatedly says "not now" sees the CTA progressively
+            # less often: 3d -> 6d -> 9d -> 12d (capped). This is deliberately
+            # independent from the success counter so it cannot become spammy.
+            cooldown_multiplier = min(4, 1 + dismiss_count)
             last_shown = _parse_dt(data.get('clarify_referral_prompt_shown_at'))
-            cooldown = timedelta(days=max(0, int(self.settings.referral_prompt_cooldown_days)))
+            cooldown = timedelta(
+                days=max(0, int(self.settings.referral_prompt_cooldown_days)) * cooldown_multiplier
+            )
             if last_shown and now - last_shown < cooldown:
                 return False
 
@@ -96,6 +103,22 @@ class GrowthPromptService(GrowthService):
                 return
             data = _settings_dict(user)
             data['clarify_referral_prompt_clicked_at'] = datetime.utcnow().isoformat()
+            # Clicking means the CTA was useful; reset accumulated dismissals.
+            data['clarify_referral_prompt_dismiss_count'] = 0
             user.notification_settings = json.dumps(data, ensure_ascii=False)
             session.add(Metric(name='referral_prompt_clicked', user_id=user.id, value=1))
             await session.commit()
+
+    async def mark_referral_prompt_dismissed(self, user_id: int) -> int:
+        async with self.db.sessions() as session:
+            user = await session.get(User, int(user_id))
+            if user is None:
+                return 0
+            data = _settings_dict(user)
+            count = max(0, int(data.get('clarify_referral_prompt_dismiss_count', 0) or 0)) + 1
+            data['clarify_referral_prompt_dismiss_count'] = min(count, 20)
+            data['clarify_referral_prompt_dismissed_at'] = datetime.utcnow().isoformat()
+            user.notification_settings = json.dumps(data, ensure_ascii=False)
+            session.add(Metric(name='referral_prompt_dismissed', user_id=user.id, value=1))
+            await session.commit()
+            return count
