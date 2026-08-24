@@ -27,6 +27,10 @@ BTN_PROFILE = '👤 Профиль'
 BTN_MORE = '••• Ещё'
 BTN_BACK = '↩️ Основное меню'
 
+# Bump this on releases that change the Mini App shell. Telegram Android can
+# keep a persistent WebView URL much longer than normal browser cache rules.
+WEBAPP_BUILD_ID = '20260824-prelaunch1'
+
 # Old persistent Telegram keyboards can survive a deploy. Keep their labels
 # routable even though the new menu no longer shows them.
 LEGACY_MEMORY = '🧠 Memory'
@@ -50,7 +54,7 @@ def quick_webapp_url(webapp_url: str = '', page: str | None = None) -> str:
 
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query['launch'] = 'keyboard'
-    query['v'] = '20260823-2'
+    query['v'] = WEBAPP_BUILD_ID
     if page:
         query['page'] = page
     return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
@@ -97,10 +101,10 @@ def plans_keyboard(settings) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=f'👑 PRO · {settings.pro_stars_price} ⭐', callback_data='plan:buy:pro')],
         [InlineKeyboardButton(text=f'💎 PRO MAX · {settings.max_stars_price} ⭐', callback_data='plan:buy:max')],
         [
-            InlineKeyboardButton(text=f'+100 · {settings.request_pack_100_stars} ⭐', callback_data='plan:buy:pack100'),
-            InlineKeyboardButton(text=f'+500 · {settings.request_pack_500_stars} ⭐', callback_data='plan:buy:pack500'),
+            InlineKeyboardButton(text=f'+50 · {settings.request_pack_50_stars} ⭐', callback_data='plan:buy:pack50'),
+            InlineKeyboardButton(text=f'+150 · {settings.request_pack_150_stars} ⭐', callback_data='plan:buy:pack150'),
         ],
-        [InlineKeyboardButton(text=f'+2000 запросов · {settings.request_pack_2000_stars} ⭐', callback_data='plan:buy:pack2000')],
+        [InlineKeyboardButton(text=f'+500 запросов · {settings.request_pack_500_stars} ⭐', callback_data='plan:buy:pack500')],
     ])
 
 
