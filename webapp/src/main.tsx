@@ -1,8 +1,9 @@
-import { StrictMode } from 'react'
+import { Component, StrictMode, type ErrorInfo, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV1'
 import BetaNoticeWidget from './BetaNoticeWidget'
 import CopilotWidget from './CopilotWidget'
+import DeepLinkWidget from './DeepLinkWidget'
 import SupportWidget from './SupportWidget'
 import PlansWidget from './PlansWidget'
 import MaterialCleanupWidget from './MaterialCleanupWidget'
@@ -30,16 +31,42 @@ telegramWebApp?.expand?.()
 telegramWebApp?.setHeaderColor?.('#061126')
 telegramWebApp?.setBackgroundColor?.('#061126')
 
+class MiniAppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Clarify Mini App render failed', error, info)
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children
+    return <main className="v1-outside">
+      <div>
+        <h2>Не получилось открыть Clarify</h2>
+        <p>Интерфейс не загрузился. Попробуй перезапустить Mini App — данные не потеряются.</p>
+        <button className="v1-primary" onClick={() => window.location.reload()}>Открыть заново</button>
+      </div>
+    </main>
+  }
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <ProfileShortcutWidget />
-    <ReferralProfileWidget />
-    <PlansWidget />
-    <MaterialCleanupWidget />
-    <CopilotWidget />
-    <UXFixesWidget />
-    <BetaNoticeWidget />
-    <SupportWidget />
+    <MiniAppErrorBoundary>
+      <App />
+      <ProfileShortcutWidget />
+      <ReferralProfileWidget />
+      <PlansWidget />
+      <MaterialCleanupWidget />
+      <CopilotWidget />
+      <UXFixesWidget />
+      <DeepLinkWidget />
+      <BetaNoticeWidget />
+      <SupportWidget />
+    </MiniAppErrorBoundary>
   </StrictMode>,
 )
