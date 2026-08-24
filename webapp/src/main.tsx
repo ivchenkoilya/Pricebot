@@ -9,6 +9,7 @@ import PlansWidget from './PlansWidget'
 import MaterialCleanupWidget from './MaterialCleanupWidget'
 import ProfileShortcutWidget from './ProfileShortcutWidget'
 import ReferralProfileWidget from './ReferralProfileWidget'
+import RussianUiWidget from './RussianUiWidget'
 import UXFixesWidget from './UXFixesWidget'
 import './v1.css'
 import './v1-mobile.css'
@@ -47,7 +48,7 @@ class MiniAppErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     return <main className="v1-outside">
       <div>
         <h2>Не получилось открыть Clarify</h2>
-        <p>Интерфейс не загрузился. Попробуй перезапустить Mini App — данные не потеряются.</p>
+        <p>Интерфейс не загрузился. Попробуй перезапустить мини-приложение — данные не потеряются.</p>
         <button className="v1-primary" onClick={() => window.location.reload()}>Открыть заново</button>
       </div>
     </main>
@@ -67,6 +68,7 @@ createRoot(document.getElementById('root')!).render(
       <DeepLinkWidget />
       <BetaNoticeWidget />
       <SupportWidget />
+      <RussianUiWidget />
     </MiniAppErrorBoundary>
   </StrictMode>,
 )
