@@ -57,7 +57,7 @@ const clickDock = (label: string) => {
 
 const openInMemory = (query: string) => {
   haptic()
-  clickDock('Memory')
+  clickDock('Материалы')
   window.setTimeout(() => {
     const input = document.querySelector('.v1-search input') as HTMLInputElement | null
     if (!input) return
@@ -142,11 +142,11 @@ function InboxCard() {
     return () => { alive = false }
   }, [])
 
-  if (loading) return <section className="copilot-inbox copilot-loading"><LoaderCircle /><div><b>AI Inbox</b><small>Собираю важное из последних материалов…</small></div></section>
+  if (loading) return <section className="copilot-inbox copilot-loading"><LoaderCircle /><div><b>Важное</b><small>Собираю важное из последних материалов…</small></div></section>
   if (!data || (!data.items.length && !data.active_reminders)) return null
 
   return <section className="copilot-inbox">
-    <header><div><span className="copilot-eyebrow"><Sparkles /> AUTONOMOUS COPILOT</span><h2>AI Inbox</h2><p>Clarify сам заметил то, что может потребовать внимания.</p></div><span className="copilot-live">LIVE</span></header>
+    <header><div><span className="copilot-eyebrow"><Sparkles /> УМНЫЙ ПОМОЩНИК</span><h2>Важное</h2><p>Clarify сам заметил то, что может потребовать внимания.</p></div><span className="copilot-live">АКТИВНО</span></header>
     <div className="copilot-counters">
       <span><Check /><b>{data.tasks}</b><small>задачи</small></span>
       <span><Clock3 /><b>{data.deadlines}</b><small>сроки</small></span>
@@ -177,7 +177,7 @@ function SmartMemorySearch() {
   }
 
   return <section className="copilot-search">
-    <div className="copilot-search-head"><span><Search /></span><div><small>SMART SEARCH</small><b>Найти по смыслу</b><p>Ищет не только точное название: понимает близкие слова, суммы, сроки и тему.</p></div></div>
+    <div className="copilot-search-head"><span><Search /></span><div><small>УМНЫЙ ПОИСК</small><b>Найти по смыслу</b><p>Ищет не только точное название: понимает близкие слова, суммы, сроки и тему.</p></div></div>
     <form onSubmit={run}><Search /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Например: где было про оплату поставщику?"/><button disabled={loading || q.trim().length < 2}>{loading ? <LoaderCircle className="spin" /> : <Sparkles />}</button></form>
     {error && <div className="copilot-error">{error}</div>}
     {result && <div className="copilot-results">{!result.items.length ? <p className="copilot-none">Ничего похожего не нашёл.</p> : result.items.map(item => <button key={item.id} onClick={() => openInMemory(item.title)}><span><Brain /></span><div><b>{item.title}</b><p>{item.snippet || item.summary || 'Материал Clarify'}</p></div><ChevronRight /></button>)}</div>}
@@ -229,7 +229,7 @@ function MaterialCopilot({ title }: { title: string }) {
   return <section className="material-copilot">
     <button className="copilot-full-button" disabled={!materialId || loading} onClick={() => void full()}><span><WandSparkles /></span><div><b>{loading ? 'Делаю полный разбор…' : '⚡ Сделать всё'}</b><small>Главное + действия + сроки + деньги + риски одним запросом</small></div>{loading ? <LoaderCircle className="spin" /> : <ChevronRight />}</button>
     {error && <div className="copilot-full-error"><CircleAlert /><div><b>Не получилось</b><p>{error}</p>{needsPro && <button onClick={() => window.dispatchEvent(new Event('clarify:open-plans'))}>Открыть тарифы</button>}</div></div>}
-    {answer && <div className="copilot-full-answer"><span className="copilot-eyebrow"><Sparkles /> FULL ANALYSIS</span><pre>{answer}</pre><div className="copilot-feedback"><small>Полезный разбор?</small><button className={rated === true ? 'active' : ''} onClick={() => void feedback(true)}><ThumbsUp /></button><button className={rated === false ? 'active bad' : ''} onClick={() => void feedback(false)}><ThumbsDown /></button></div></div>}
+    {answer && <div className="copilot-full-answer"><span className="copilot-eyebrow"><Sparkles /> ПОЛНЫЙ РАЗБОР</span><pre>{answer}</pre><div className="copilot-feedback"><small>Полезный разбор?</small><button className={rated === true ? 'active' : ''} onClick={() => void feedback(true)}><ThumbsUp /></button><button className={rated === false ? 'active bad' : ''} onClick={() => void feedback(false)}><ThumbsDown /></button></div></div>}
     {related.length > 0 && <div className="copilot-related"><span>Связанные материалы</span>{related.slice(0, 3).map(item => <button key={item.id} onClick={() => openInMemory(item.title)}><Brain /><div><b>{item.title}</b><small>{item.snippet || item.summary}</small></div><ChevronRight /></button>)}</div>}
   </section>
 }
@@ -248,13 +248,13 @@ function OwnerOverview() {
   }, [data])
   if (!data) return null
   return <section className="copilot-admin">
-    <div className="copilot-search-head"><span><Crown /></span><div><small>OWNER ANALYTICS</small><b>Clarify сегодня</b><p>Короткая панель владельца без отдельной админки.</p></div></div>
+    <div className="copilot-search-head"><span><Crown /></span><div><small>АНАЛИТИКА ВЛАДЕЛЬЦА</small><b>Clarify сегодня</b><p>Короткая панель владельца без отдельной админки.</p></div></div>
     <div className="copilot-admin-grid">
-      <span><Users /><small>Активны 24ч</small><b>{data.active_24h}</b><em>из {data.users_total}</em></span>
-      <span><Sparkles /><small>AI за 24ч</small><b>{data.ai_24h}</b></span>
+      <span><Users /><small>Активны 24 ч</small><b>{data.active_24h}</b><em>из {data.users_total}</em></span>
+      <span><Sparkles /><small>ИИ за 24 ч</small><b>{data.ai_24h}</b></span>
       <span><Gauge /><small>Материалов</small><b>{data.materials_total}</b></span>
-      <span className={data.errors_24h ? 'warn' : ''}><CircleAlert /><small>Ошибок 24ч</small><b>{data.errors_24h}</b></span>
-      <span><Zap /><small>Stars / 30д</small><b>{data.stars_30d}</b></span>
+      <span className={data.errors_24h ? 'warn' : ''}><CircleAlert /><small>Ошибок 24 ч</small><b>{data.errors_24h}</b></span>
+      <span><Zap /><small>Stars / 30 дн.</small><b>{data.stars_30d}</b></span>
       <span><ThumbsUp /><small>Полезность</small><b>{satisfaction === null ? '—' : `${satisfaction}%`}</b></span>
     </div>
   </section>
