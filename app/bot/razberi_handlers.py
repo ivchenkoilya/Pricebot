@@ -38,6 +38,8 @@ def build_router(ctx) -> Router:
     # Exact material questions use the improved retrieval/concise-answer path.
     router.include_router(build_precise_qa_router(ctx))
     router.include_router(build_materials_router(ctx))
+    # Direct Telegram uploads remain supported. Public YouTube/media-link
+    # extraction is feature-gated until a stable proxy path is configured.
     router.include_router(build_video_router(ctx))
     # Voice/audio goes through the dedicated multilingual handler before the
     # generic media router so the user sees transcription first, then analysis.
@@ -46,7 +48,8 @@ def build_router(ctx) -> Router:
     # and indexing. Image documents still fall through to the generic media path.
     router.include_router(build_document_router(ctx))
     router.include_router(build_media_router(ctx))
-    router.include_router(build_media_links_router(ctx))
+    if ctx.settings.media_download_enabled:
+        router.include_router(build_media_links_router(ctx))
     router.include_router(build_web_router(ctx))
     router.include_router(build_chat_router(ctx))
     router.include_router(build_context_router(ctx))
