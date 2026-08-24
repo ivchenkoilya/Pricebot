@@ -45,6 +45,7 @@ def build_image_router(ctx) -> Router:
             if caption else
             '📸 <b>Clarify смотрит…</b>\nЧитаю изображение и выделяю главное'
         )
+        usage_recorded = False
 
         try:
             loop = asyncio.get_running_loop()
@@ -65,6 +66,7 @@ def build_image_router(ctx) -> Router:
                 )
             vision_ms = int((loop.time() - vision_started) * 1000)
             await ctx.usage.record(user.id, model, 'image_caption' if caption else 'image', usage)
+            usage_recorded = True
 
             material = await ctx.materials.create(
                 user.id,
@@ -84,6 +86,8 @@ def build_image_router(ctx) -> Router:
                 reply_markup=actions(material.id, material.type),
             )
         except Exception as exc:
+            if not usage_recorded and hasattr(ctx.usage, 'release'):
+                await ctx.usage.release(user.id)
             await ctx.errors.record(request_id, message.from_user.id, 'image', exc)
             await ctx.metrics.inc('vision_errors', user.id)
             await progress.edit_text(
