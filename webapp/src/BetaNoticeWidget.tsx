@@ -1,31 +1,34 @@
 import { useState } from 'react'
-import { LifeBuoy, X } from 'lucide-react'
 import { haptic, hasTelegramAuth } from './api'
 
-const STORAGE_KEY = 'clarify_beta_notice_v1'
-
 export default function BetaNoticeWidget() {
-  const [visible, setVisible] = useState(() => window.localStorage.getItem(STORAGE_KEY) !== 'dismissed')
+  // The warning is intentionally session-scoped: every fresh Mini App launch
+  // reminds the user that Clarify is still under active development.
+  const [visible, setVisible] = useState(true)
 
   if (!hasTelegramAuth() || !visible) return null
 
-  const dismiss = () => {
-    window.localStorage.setItem(STORAGE_KEY, 'dismissed')
+  const accept = () => {
+    haptic('medium')
     setVisible(false)
+    // After the warning closes, draw attention to the real support button
+    // without opening the form automatically.
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('clarify:highlight-support'))
+    }, 120)
   }
 
-  const openSupport = () => {
-    haptic()
-    window.dispatchEvent(new CustomEvent('clarify:open-support'))
-  }
-
-  return <aside className="beta-notice" role="status">
-    <div className="beta-notice-icon">🧪</div>
-    <div className="beta-notice-copy">
-      <b>Clarify пока в разработке</b>
-      <span>Некоторые функции могут работать нестабильно. Если заметишь проблему — напиши в поддержку.</span>
-      <button onClick={openSupport}><LifeBuoy /> Поддержка</button>
-    </div>
-    <button className="beta-notice-close" aria-label="Скрыть уведомление" onClick={dismiss}><X /></button>
-  </aside>
+  return <div className="beta-gate" role="dialog" aria-modal="true" aria-labelledby="clarify-beta-title">
+    <section className="beta-gate-content">
+      <div className="beta-gate-icon" aria-hidden="true">🧪</div>
+      <span className="beta-gate-eyebrow">BETA · ACTIVE DEVELOPMENT</span>
+      <h1 id="clarify-beta-title">Clarify находится в разработке</h1>
+      <p>
+        Некоторые функции пока могут работать нестабильно, ошибаться или отвечать дольше обычного.
+        Если заметишь проблему — напиши в поддержку. Так мы быстрее найдём и исправим её.
+      </p>
+      <div className="beta-gate-support-hint">🛟 После входа кнопка «Поддержка» будет подсвечена.</div>
+      <button className="beta-gate-accept" onClick={accept}>Хорошо</button>
+    </section>
+  </div>
 }
