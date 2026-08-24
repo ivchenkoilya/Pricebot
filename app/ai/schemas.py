@@ -24,7 +24,7 @@ class AnalysisResult(BaseModel):
         if self.key_points:
             parts += ['', '<b>📌 Главное</b>'] + [f'• {esc(x)}' for x in self.key_points[:6]]
         if self.tasks:
-            parts += ['', '<b>✅ Что сделать</b>'] + [f'☐ {esc(x)}' for x in self.tasks[:6]]
+            parts += ['', '<b>✅ Что сделать</b>'] + [f'• {esc(x)}' for x in self.tasks[:6]]
         if self.dates:
             parts += ['', f'<b>📅 Сроки · {len(self.dates)}</b>', ' • '.join(esc(x) for x in self.dates[:6])]
         if self.amounts:
@@ -46,7 +46,7 @@ class AnalysisResult(BaseModel):
         if details:
             parts += ['', *[f'• {esc(item)}' for item in details]]
         if self.tasks:
-            parts += ['', '<b>✅ Дальше</b>', *[f'☐ {esc(item)}' for item in self.tasks[:3]]]
+            parts += ['', '<b>✅ Дальше</b>', *[f'• {esc(item)}' for item in self.tasks[:3]]]
         if self.warnings:
             parts += ['', f'⚠️ {esc(self.warnings[0])}']
         return '\n'.join(parts)[:2600]
