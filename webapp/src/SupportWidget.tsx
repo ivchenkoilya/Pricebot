@@ -44,7 +44,7 @@ export default function SupportWidget() {
       highlightTimer.current = window.setTimeout(() => {
         setHighlighted(false)
         highlightTimer.current = null
-      }, 9000)
+      }, 5000)
     }
 
     window.addEventListener('clarify:open-support', openSupport)
